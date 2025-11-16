@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/linode/linodego"
@@ -23,6 +24,12 @@ func NewClient(token string) *Client {
 	oauth2Client := oauth2.NewClient(context.Background(), tokenSource)
 
 	linodeClient := linodego.NewClient(oauth2Client)
+
+	// Support base URL override for testing
+	baseURL := os.Getenv("LINODE_API_URL")
+	if baseURL != "" {
+		linodeClient.SetBaseURL(baseURL)
+	}
 
 	return &Client{
 		client: &linodeClient,
