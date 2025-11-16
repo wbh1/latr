@@ -281,8 +281,8 @@ func getVaultMetadata(t *testing.T, path string) map[string]interface{} {
 
 	// Convert data path to metadata path
 	metadataPath := path
-	if bytes.Contains([]byte(path), []byte("/data/")) {
-		metadataPath = string(bytes.ReplaceAll([]byte(path), []byte("/data/"), []byte("/metadata/")))
+	if strings.Contains(path, "/data/") {
+		metadataPath = strings.ReplaceAll(path, "/data/", "/metadata/")
 	}
 
 	url := fmt.Sprintf("%s/v1/%s", vaultAddr, metadataPath)
