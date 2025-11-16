@@ -499,3 +499,58 @@ tokens:
 	assert.Equal(t, "1", fmt.Sprintf("%v", metadata["rotation_count"]))
 	assert.NotEmpty(t, metadata["previous_linode_id"])
 }
+
+func TestE2E_DryRunMode(t *testing.T) {
+	// Setup: Reset mock state
+	resetMockLinode(t)
+
+	// Create config file with dry_run enabled
+	configContent := fmt.Sprintf(`daemon:
+  mode: "one-shot"
+  dry_run: true
+
+rotation:
+  threshold_percent: 10
+  prune_expired: false
+
+vault:
+  address: "http://localhost:8200"
+  role_id: "%s"
+  secret_id: "%s"
+  mount_path: "secret"
+
+observability:
+  log_level: "info"
+
+tokens:
+  - label: "e2e-test-dryrun"
+    team: "test-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "e2e/test-dryrun"
+`, roleID, secretID)
+
+	configPath := filepath.Join(os.TempDir(), "latr-e2e-dryrun-config.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	require.NoError(t, err)
+	defer os.Remove(configPath)
+
+	// Execute: Run latr in dry-run mode
+	stdout, stderr := runLatr(t, configPath)
+	t.Logf("stdout: %s", stdout)
+	t.Logf("stderr: %s", stderr)
+
+	// Validate: NO token created in mock Linode
+	tokens := getMockLinodeTokens(t)
+	assert.Len(t, tokens, 0, "expected no tokens in mock Linode (dry-run mode)")
+
+	// Validate: NO data written to Vault
+	secret := getVaultSecret(t, "secret/data/e2e/test-dryrun")
+	assert.Nil(t, secret, "expected no secret in Vault (dry-run mode)")
+
+	// Validate: Logs indicate dry-run mode
+	combinedOutput := stdout + stderr
+	assert.Contains(t, combinedOutput, "DRY RUN", "expected dry-run indicator in logs")
+}
