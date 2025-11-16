@@ -24,6 +24,25 @@ A Go application for automatically managing and rotating Linode API tokens with 
 
 ## Installation
 
+### Using Container Image (Recommended)
+
+```bash
+# Pull the latest image from GitHub Container Registry
+docker pull ghcr.io/wbh1/latr:latest
+
+# Run with your configuration
+docker run -v $(pwd)/config.yaml:/config.yaml \
+  -e LINODE_TOKEN="your-token" \
+  ghcr.io/wbh1/latr:latest \
+  -config /config.yaml
+```
+
+### Download Binary from Releases
+
+Download the latest release for your platform from the [releases page](https://github.com/wbh1/latr/releases).
+
+### Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/wbh1/latr.git
