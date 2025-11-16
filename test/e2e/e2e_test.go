@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,9 +140,12 @@ func waitForService(url string, timeout time.Duration) error {
 
 func initializeVault() error {
 	// Enable KV v2 secrets engine (already enabled in dev mode at "secret/")
-	// Enable AppRole auth
+	// Enable AppRole auth (ignore error if already enabled)
 	if err := vaultExec("auth", "enable", "approle"); err != nil {
-		return fmt.Errorf("failed to enable approle: %w", err)
+		// Check if error is because approle is already enabled
+		if !strings.Contains(err.Error(), "path is already in use") {
+			return fmt.Errorf("failed to enable approle: %w", err)
+		}
 	}
 
 	// Create policy
