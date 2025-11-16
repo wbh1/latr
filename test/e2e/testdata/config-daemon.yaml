@@ -1,0 +1,26 @@
+daemon:
+  mode: "daemon"
+  check_interval: "5s"
+  dry_run: false
+
+rotation:
+  threshold_percent: 10
+  prune_expired: false
+
+vault:
+  address: "http://localhost:8200"
+  role_id: "${VAULT_ROLE_ID}"
+  secret_id: "${VAULT_SECRET_ID}"
+  mount_path: "secret"
+
+observability:
+  log_level: "info"
+
+tokens:
+  - label: "e2e-test-daemon"
+    team: "test-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "secret/data/e2e/test-daemon"
