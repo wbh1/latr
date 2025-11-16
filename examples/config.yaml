@@ -1,0 +1,51 @@
+# Example configuration for Linode API Token Rotator (latr)
+
+# Global daemon settings
+daemon:
+  mode: "daemon"                   # "daemon" or "one-shot"
+  check_interval: "30m"            # How often to check tokens (daemon mode only)
+  dry_run: false                   # If true, no actual changes are made
+
+# Rotation behavior
+rotation:
+  threshold_percent: 10            # Rotate when <=10% of validity remains
+  prune_expired: false             # Delete expired tokens from Linode API
+
+# Vault configuration
+vault:
+  address: "https://vault.example.com"
+  role_id: "${VAULT_ROLE_ID}"      # Can use env vars
+  secret_id: "${VAULT_SECRET_ID}"
+  mount_path: "secret"             # KV v2 mount path
+
+# Observability settings
+observability:
+  otel_endpoint: "localhost:4317"  # OpenTelemetry collector endpoint (optional)
+  log_level: "info"                # debug, info, warn, error
+
+# Token definitions
+tokens:
+  - label: "my-api-token"
+    team: "platform-team"
+    validity: "90d"                # Must be <= 6 months (180d)
+    scopes: "*"                    # "*" for all scopes, or comma-separated list
+    storage:
+      - type: "vault"
+        path: "secret/data/linode/tokens/my-api-token"
+
+  - label: "backup-token"
+    team: "sre-team"
+    validity: "180d"               # Maximum allowed
+    scopes: "linodes:read_only,domains:read_only"
+    rotation_threshold: 15         # Override global threshold for this token
+    storage:
+      - type: "vault"
+        path: "secret/data/linode/tokens/backup"
+
+  - label: "short-lived-token"
+    team: "dev-team"
+    validity: "7d"
+    scopes: "linodes:read_write"
+    storage:
+      - type: "vault"
+        path: "secret/data/linode/tokens/dev"
