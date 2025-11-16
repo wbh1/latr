@@ -175,11 +175,18 @@ Use a glob pattern to load multiple config files:
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run unit tests
 go test ./...
+make test
 
-# Run tests with coverage
+# Run unit tests with coverage
 go test ./... -cover
+
+# Run e2e tests (requires Docker)
+make test-e2e
+
+# Run all tests
+make test-all
 
 # Run specific package tests
 go test ./internal/rotation -v
@@ -208,7 +215,7 @@ This project was built using **Test-Driven Development (TDD)**:
 - All features have comprehensive unit tests
 - Mock implementations for external dependencies (Linode, Vault)
 - Table-driven tests for validation logic
-- Integration test support via Docker Compose (future enhancement)
+- ✅ Integration tests with Docker Compose
 
 ## Observability
 
@@ -243,7 +250,7 @@ Structured logging with rotation events, errors, and state changes
 
 - [ ] Additional storage backends
 - [ ] Prometheus metrics exporter
-- [ ] Integration tests with Docker Compose
+- [x] Integration tests with Docker Compose
 
 ## Contributing
 

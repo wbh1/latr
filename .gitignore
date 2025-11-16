@@ -37,3 +37,6 @@ tmp/
 config.yaml
 configs/*.yaml
 !examples/*.yaml
+
+# Git worktrees
+.worktrees/
