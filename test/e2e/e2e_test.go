@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -149,7 +150,7 @@ path "secret/data/e2e/*" {
   capabilities = ["create", "read", "update", "delete"]
 }
 path "secret/metadata/e2e/*" {
-  capabilities = ["read", "list", "delete"]
+  capabilities = ["create", "read", "update", "list", "delete"]
 }
 `
 	policyFile := "/tmp/latr-e2e-policy.hcl"
@@ -357,4 +358,66 @@ func getMockLinodeTokens(t *testing.T) []map[string]interface{} {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&result))
 
 	return result.Data
+}
+
+func TestE2E_CreateToken(t *testing.T) {
+	// Setup: Reset mock state
+	resetMockLinode(t)
+
+	// Create config file with actual role_id and secret_id
+	configContent := fmt.Sprintf(`daemon:
+  mode: "one-shot"
+  dry_run: false
+
+rotation:
+  threshold_percent: 10
+  prune_expired: false
+
+vault:
+  address: "http://localhost:8200"
+  role_id: "%s"
+  secret_id: "%s"
+  mount_path: "secret"
+
+observability:
+  log_level: "info"
+
+tokens:
+  - label: "e2e-test-create"
+    team: "test-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "e2e/test-create"
+`, roleID, secretID)
+
+	configPath := filepath.Join(os.TempDir(), "latr-e2e-create-config.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	require.NoError(t, err)
+	defer os.Remove(configPath)
+
+	// Execute: Run latr
+	stdout, stderr := runLatr(t, configPath)
+	t.Logf("stdout: %s", stdout)
+	t.Logf("stderr: %s", stderr)
+
+	// Validate: Token created in mock Linode
+	tokens := getMockLinodeTokens(t)
+	require.Len(t, tokens, 1, "expected exactly one token in mock Linode")
+	assert.Equal(t, "e2e-test-create", tokens[0]["label"])
+	assert.Equal(t, "*", tokens[0]["scopes"])
+
+	// Validate: Token stored in Vault
+	secret := getVaultSecret(t, "secret/data/e2e/test-create")
+	require.NotNil(t, secret, "expected secret to exist in Vault")
+	assert.NotEmpty(t, secret["token"], "expected token value in Vault")
+
+	// Validate: Vault metadata
+	metadata := getVaultMetadata(t, "secret/data/e2e/test-create")
+	require.NotNil(t, metadata, "expected metadata to exist in Vault")
+	t.Logf("Metadata: %+v", metadata)
+	assert.Equal(t, "e2e-test-create", metadata["label"])
+	assert.NotEmpty(t, metadata["current_linode_id"])
+	assert.Equal(t, "0", fmt.Sprintf("%v", metadata["rotation_count"]))
 }

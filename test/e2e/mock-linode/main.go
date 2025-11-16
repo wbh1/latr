@@ -14,6 +14,30 @@ import (
 	"time"
 )
 
+// LinodeTime wraps time.Time to use Linode's datetime format
+type LinodeTime struct {
+	time.Time
+}
+
+const linodeDateFormat = "2006-01-02T15:04:05"
+
+func (lt LinodeTime) MarshalJSON() ([]byte, error) {
+	return json.Marshal(lt.Format(linodeDateFormat))
+}
+
+func (lt *LinodeTime) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	t, err := time.Parse(linodeDateFormat, s)
+	if err != nil {
+		return err
+	}
+	lt.Time = t
+	return nil
+}
+
 type Token struct {
 	ID      int       `json:"id"`
 	Label   string    `json:"label"`
@@ -28,12 +52,12 @@ type TokensResponse struct {
 }
 
 type TokenResponse struct {
-	ID      int       `json:"id"`
-	Label   string    `json:"label"`
-	Token   string    `json:"token"`
-	Scopes  string    `json:"scopes"`
-	Created time.Time `json:"created"`
-	Expiry  time.Time `json:"expiry"`
+	ID      int        `json:"id"`
+	Label   string     `json:"label"`
+	Token   string     `json:"token"`
+	Scopes  string     `json:"scopes"`
+	Created LinodeTime `json:"created"`
+	Expiry  LinodeTime `json:"expiry"`
 }
 
 type CreateTokenRequest struct {
@@ -109,25 +133,16 @@ func createTokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Decoded create token request: label=%s, scopes=%s, expiry=%s", req.Label, req.Scopes, req.Expiry)
 
-	// Try multiple time formats
-	var expiry time.Time
-	formats := []string{
-		time.RFC3339,
-		time.RFC3339Nano,
-		"2006-01-02T15:04:05Z07:00",
-		"2006-01-02T15:04:05Z",
-		"2006-01-02 15:04:05",
-	}
-	for _, format := range formats {
-		expiry, err = time.Parse(format, req.Expiry)
-		if err == nil {
-			break
-		}
-	}
+	// Parse expiry time - Linode API uses format like "2018-01-01T13:46:32"
+	expiry, err := time.Parse("2006-01-02T15:04:05", req.Expiry)
 	if err != nil {
-		log.Printf("Failed to parse expiry '%s': %v", req.Expiry, err)
-		http.Error(w, "Invalid expiry format", http.StatusBadRequest)
-		return
+		// Try RFC3339 as fallback
+		expiry, err = time.Parse(time.RFC3339, req.Expiry)
+		if err != nil {
+			log.Printf("Failed to parse expiry '%s': %v", req.Expiry, err)
+			http.Error(w, "Invalid expiry format", http.StatusBadRequest)
+			return
+		}
 	}
 
 	mu.Lock()
@@ -155,8 +170,8 @@ func createTokenHandler(w http.ResponseWriter, r *http.Request) {
 		Label:   token.Label,
 		Token:   token.Token,
 		Scopes:  token.Scopes,
-		Created: token.Created,
-		Expiry:  token.Expiry,
+		Created: LinodeTime{token.Created},
+		Expiry:  LinodeTime{token.Expiry},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -197,8 +212,8 @@ func getTokenHandler(w http.ResponseWriter, r *http.Request) {
 		ID:      token.ID,
 		Label:   token.Label,
 		Scopes:  token.Scopes,
-		Created: token.Created,
-		Expiry:  token.Expiry,
+		Created: LinodeTime{token.Created},
+		Expiry:  LinodeTime{token.Expiry},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
