@@ -554,3 +554,97 @@ tokens:
 	combinedOutput := stdout + stderr
 	assert.Contains(t, combinedOutput, "DRY RUN", "expected dry-run indicator in logs")
 }
+
+func TestE2E_DaemonMode(t *testing.T) {
+	// Setup: Reset mock state
+	resetMockLinode(t)
+
+	// Setup: Create token that needs rotation
+	now := time.Now()
+	validity := 90 * 24 * time.Hour
+	created := now.Add(-validity * 95 / 100)
+	expiry := created.Add(validity)
+
+	setupMockLinodeToken(t, "e2e-test-daemon", expiry)
+
+	// Create config file
+	configContent := fmt.Sprintf(`daemon:
+  mode: "daemon"
+  check_interval: "5s"
+  dry_run: false
+
+rotation:
+  threshold_percent: 10
+  prune_expired: false
+
+vault:
+  address: "http://localhost:8200"
+  role_id: "%s"
+  secret_id: "%s"
+  mount_path: "secret"
+
+observability:
+  log_level: "info"
+
+tokens:
+  - label: "e2e-test-daemon"
+    team: "test-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "e2e/test-daemon"
+`, roleID, secretID)
+
+	configPath := filepath.Join(os.TempDir(), "latr-e2e-daemon-config.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	require.NoError(t, err)
+	defer os.Remove(configPath)
+
+	// Execute: Run latr in daemon mode (background)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, latrBinary, "-config", configPath)
+	cmd.Env = append(os.Environ(),
+		"LINODE_TOKEN=test-token",
+		"LINODE_API_URL="+mockLinode,
+		"VAULT_ROLE_ID="+roleID,
+		"VAULT_SECRET_ID="+secretID,
+	)
+
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	require.NoError(t, cmd.Start())
+
+	// Wait for first rotation cycle (up to 10 seconds)
+	var secret map[string]interface{}
+	for i := 0; i < 20; i++ {
+		time.Sleep(500 * time.Millisecond)
+		secret = getVaultSecret(t, "secret/data/e2e/test-daemon")
+		if secret != nil {
+			break
+		}
+	}
+
+	// Send SIGTERM for graceful shutdown
+	require.NoError(t, cmd.Process.Signal(os.Interrupt))
+
+	// Wait for process to exit
+	_ = cmd.Wait()
+
+	stdout := outBuf.String()
+	stderr := errBuf.String()
+	t.Logf("stdout: %s", stdout)
+	t.Logf("stderr: %s", stderr)
+
+	// Validate: Token was rotated
+	require.NotNil(t, secret, "expected token to be rotated in Vault")
+	assert.NotEmpty(t, secret["token"])
+
+	// Validate: Logs show daemon mode and graceful shutdown
+	combinedOutput := stdout + stderr
+	assert.Contains(t, combinedOutput, "daemon mode", "expected daemon mode indicator in logs")
+}
