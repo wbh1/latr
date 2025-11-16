@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "latr.fullname" . }}
+  labels:
+    {{- include "latr.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    daemon:
+      mode: {{ .Values.config.daemon.mode }}
+      check_interval: {{ .Values.config.daemon.checkInterval | quote }}
+      dry_run: {{ .Values.config.daemon.dryRun }}
+
+    rotation:
+      threshold_percent: {{ .Values.config.rotation.thresholdPercent }}
+      prune_expired: {{ .Values.config.rotation.pruneExpired }}
+
+    vault:
+      address: {{ .Values.config.vault.address | quote }}
+      role_id: "${VAULT_ROLE_ID}"
+      secret_id: "${VAULT_SECRET_ID}"
+      mount_path: {{ .Values.config.vault.mountPath | quote }}
+
+    observability:
+      {{- if .Values.config.observability.otelEndpoint }}
+      otel_endpoint: {{ .Values.config.observability.otelEndpoint | quote }}
+      {{- end }}
+      log_level: {{ .Values.config.observability.logLevel | quote }}
+
+    tokens:
+      {{- toYaml .Values.config.tokens | nindent 6 }}
