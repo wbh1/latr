@@ -26,10 +26,7 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run unit tests
-        run: make test
-
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         run: go test -cover ./...
 
   e2e-tests:
