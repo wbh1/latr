@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -91,14 +92,40 @@ func createTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read and log the raw body
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Received raw request body: %s", string(bodyBytes))
+
 	var req CreateTokenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
+		log.Printf("Failed to unmarshal request: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	expiry, err := time.Parse(time.RFC3339, req.Expiry)
+	log.Printf("Decoded create token request: label=%s, scopes=%s, expiry=%s", req.Label, req.Scopes, req.Expiry)
+
+	// Try multiple time formats
+	var expiry time.Time
+	formats := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02 15:04:05",
+	}
+	for _, format := range formats {
+		expiry, err = time.Parse(format, req.Expiry)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
+		log.Printf("Failed to parse expiry '%s': %v", req.Expiry, err)
 		http.Error(w, "Invalid expiry format", http.StatusBadRequest)
 		return
 	}
