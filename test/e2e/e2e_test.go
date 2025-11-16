@@ -421,3 +421,81 @@ tokens:
 	assert.NotEmpty(t, metadata["current_linode_id"])
 	assert.Equal(t, "0", fmt.Sprintf("%v", metadata["rotation_count"]))
 }
+
+func TestE2E_RotateToken(t *testing.T) {
+	// Setup: Reset mock state
+	resetMockLinode(t)
+
+	// Setup: Create existing token that's 95% expired (5% validity remaining)
+	now := time.Now()
+	validity := 90 * 24 * time.Hour // 90 days
+	created := now.Add(-validity * 95 / 100) // Created 95% of validity ago
+	expiry := created.Add(validity)          // Expires 5% from now
+
+	oldTokenID := setupMockLinodeToken(t, "e2e-test-rotate", expiry)
+	t.Logf("Setup old token with ID: %d, expiry: %s", oldTokenID, expiry.Format(time.RFC3339))
+
+	// Create config file with actual role_id and secret_id
+	configContent := fmt.Sprintf(`daemon:
+  mode: "one-shot"
+  dry_run: false
+
+rotation:
+  threshold_percent: 10
+  prune_expired: false
+
+vault:
+  address: "http://localhost:8200"
+  role_id: "%s"
+  secret_id: "%s"
+  mount_path: "secret"
+
+observability:
+  log_level: "info"
+
+tokens:
+  - label: "e2e-test-rotate"
+    team: "test-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "e2e/test-rotate"
+`, roleID, secretID)
+
+	configPath := filepath.Join(os.TempDir(), "latr-e2e-rotate-config.yaml")
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	require.NoError(t, err)
+	defer os.Remove(configPath)
+
+	// Execute: Run latr
+	stdout, stderr := runLatr(t, configPath)
+	t.Logf("stdout: %s", stdout)
+	t.Logf("stderr: %s", stderr)
+
+	// Validate: New token created in mock Linode
+	tokens := getMockLinodeTokens(t)
+	require.Len(t, tokens, 2, "expected old token + new token in mock Linode")
+
+	// Find the new token (different ID from old)
+	var newToken map[string]interface{}
+	for _, token := range tokens {
+		if int(token["id"].(float64)) != oldTokenID {
+			newToken = token
+			break
+		}
+	}
+	require.NotNil(t, newToken, "expected to find new token")
+	assert.Equal(t, "e2e-test-rotate", newToken["label"])
+
+	// Validate: New token stored in Vault
+	secret := getVaultSecret(t, "secret/data/e2e/test-rotate")
+	require.NotNil(t, secret, "expected secret to exist in Vault")
+	assert.NotEmpty(t, secret["token"], "expected new token value in Vault")
+
+	// Validate: Vault metadata shows rotation
+	metadata := getVaultMetadata(t, "secret/data/e2e/test-rotate")
+	require.NotNil(t, metadata, "expected metadata to exist in Vault")
+	assert.Equal(t, "1", fmt.Sprintf("%v", metadata["rotation_count"]))
+	assert.NotEmpty(t, metadata["previous_linode_id"])
+}

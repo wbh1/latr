@@ -97,15 +97,21 @@ func listTokensHandler(w http.ResponseWriter, r *http.Request) {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	tokenList := make([]Token, 0, len(tokens))
+	tokenList := make([]TokenResponse, 0, len(tokens))
 	for _, t := range tokens {
 		// Don't include token value in list
-		tokenCopy := t
-		tokenCopy.Token = ""
-		tokenList = append(tokenList, tokenCopy)
+		tokenList = append(tokenList, TokenResponse{
+			ID:      t.ID,
+			Label:   t.Label,
+			Scopes:  t.Scopes,
+			Created: LinodeTime{t.Created},
+			Expiry:  LinodeTime{t.Expiry},
+		})
 	}
 
-	resp := TokensResponse{Data: tokenList}
+	resp := struct {
+		Data []TokenResponse `json:"data"`
+	}{Data: tokenList}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
