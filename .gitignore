@@ -33,6 +33,9 @@ Thumbs.db
 *.log
 tmp/
 
+# Goreleaser
+dist/
+
 # Configuration files with secrets (examples are OK)
 config.yaml
 configs/*.yaml

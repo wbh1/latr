@@ -24,6 +24,77 @@ A Go application for automatically managing and rotating Linode API tokens with 
 
 ## Installation
 
+### Using Container Image (Recommended)
+
+```bash
+# Pull the latest image from GitHub Container Registry
+docker pull ghcr.io/wbh1/latr:latest
+
+# Or pull a specific version
+docker pull ghcr.io/wbh1/latr:v1.0.0
+```
+
+#### One-Shot Mode (Run Once)
+
+```bash
+docker run --rm \
+  -v $(pwd)/config.yaml:/config/config.yaml:ro \
+  -e LINODE_TOKEN="your-linode-api-token" \
+  -e VAULT_ROLE_ID="your-vault-role-id" \
+  -e VAULT_SECRET_ID="your-vault-secret-id" \
+  ghcr.io/wbh1/latr:latest \
+  -config /config/config.yaml
+```
+
+#### Daemon Mode (Continuous Running)
+
+```bash
+docker run -d \
+  --name latr \
+  --restart unless-stopped \
+  -v $(pwd)/config.yaml:/config/config.yaml:ro \
+  -e LINODE_TOKEN="your-linode-api-token" \
+  -e VAULT_ROLE_ID="your-vault-role-id" \
+  -e VAULT_SECRET_ID="your-vault-secret-id" \
+  ghcr.io/wbh1/latr:latest \
+  -config /config/config.yaml
+
+# View logs
+docker logs -f latr
+
+# Stop gracefully
+docker stop latr
+```
+
+#### Using Docker Compose
+
+```yaml
+services:
+  latr:
+    image: ghcr.io/wbh1/latr:latest
+    container_name: latr
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+    environment:
+      - LINODE_TOKEN=${LINODE_TOKEN}
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
+      - VAULT_SECRET_ID=${VAULT_SECRET_ID}
+    command: ["-config", "/config/config.yaml"]
+```
+
+#### Multi-Architecture Support
+
+Images are available for:
+- `linux/amd64` (x86_64)
+- `linux/arm64` (ARM 64-bit, including Apple Silicon and Raspberry Pi 4+)
+
+### Download Binary from Releases
+
+Download the latest release for your platform from the [releases page](https://github.com/wbh1/latr/releases).
+
+### Build from Source
+
 ```bash
 # Clone the repository
 git clone https://github.com/wbh1/latr.git
@@ -171,6 +242,58 @@ Use a glob pattern to load multiple config files:
 - Token-specific thresholds can override global setting
 
 ## Development
+
+### Building Container Images Locally
+
+The `Dockerfile` is optimized for GoReleaser and expects a pre-built binary. For local development builds:
+
+```bash
+# Build the binary first
+go build -o latr ./cmd/latr
+
+# Build the container image
+docker build -t latr:dev .
+
+# Or build and run in one step
+go build -o latr ./cmd/latr && docker build -t latr:dev . && \
+  docker run --rm latr:dev -version
+```
+
+### Creating Releases
+
+Releases are automated via GoReleaser and GitHub Actions:
+
+1. **Tag a new version** (must follow semantic versioning):
+   ```bash
+   git tag -a v1.0.0 -m "Release v1.0.0"
+   git push origin v1.0.0
+   ```
+
+2. **Automated release process**:
+   - Builds binaries for Linux, macOS, Windows (amd64 and arm64)
+   - Creates multi-arch Docker images (amd64, arm64)
+   - Publishes images to `ghcr.io/wbh1/latr`
+   - Generates release notes from conventional commits
+   - Uploads release artifacts to GitHub Releases
+
+3. **Testing releases locally** (without pushing):
+   ```bash
+   # Install GoReleaser
+   go install github.com/goreleaser/goreleaser/v2@latest
+
+   # Test release build (snapshot mode)
+   goreleaser release --snapshot --clean
+
+   # Check output in dist/
+   ls -la dist/
+   ```
+
+4. **Conventional Commit Format** (for better changelogs):
+   - `feat:` New features
+   - `fix:` Bug fixes
+   - `docs:` Documentation changes
+   - `chore:` Maintenance tasks
+   - `test:` Test additions/changes
 
 ### Running Tests
 

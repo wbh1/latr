@@ -1,0 +1,145 @@
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are downloaded
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: latr
+    main: ./cmd/latr
+    binary: latr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - examples/*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Enhancements'
+      regexp: '^.*?(enhance|improve|update)(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999
+
+dockers:
+  # Docker image for amd64
+  - id: latr-amd64
+    use: buildx
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/wbh1/latr:{{ .Version }}-amd64"
+      - "ghcr.io/wbh1/latr:latest-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/wbh1/latr"
+      - "--label=org.opencontainers.image.description=Linode API Token Rotator"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+
+  # Docker image for arm64
+  - id: latr-arm64
+    use: buildx
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile
+    image_templates:
+      - "ghcr.io/wbh1/latr:{{ .Version }}-arm64"
+      - "ghcr.io/wbh1/latr:latest-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source=https://github.com/wbh1/latr"
+      - "--label=org.opencontainers.image.description=Linode API Token Rotator"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+
+docker_manifests:
+  # Create multi-arch manifest for version tag
+  - name_template: ghcr.io/wbh1/latr:{{ .Version }}
+    image_templates:
+      - ghcr.io/wbh1/latr:{{ .Version }}-amd64
+      - ghcr.io/wbh1/latr:{{ .Version }}-arm64
+
+  # Create multi-arch manifest for latest tag
+  - name_template: ghcr.io/wbh1/latr:latest
+    image_templates:
+      - ghcr.io/wbh1/latr:latest-amd64
+      - ghcr.io/wbh1/latr:latest-arm64
+
+release:
+  github:
+    owner: wbh1
+    name: latr
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## latr {{ .Version }}
+
+    **Full Changelog**: https://github.com/wbh1/latr/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ### Container Images
+
+    ```bash
+    docker pull ghcr.io/wbh1/latr:{{ .Version }}
+    ```
+
+    Multi-architecture support: `linux/amd64`, `linux/arm64`
