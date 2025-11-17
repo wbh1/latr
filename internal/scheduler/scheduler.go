@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/wbh1/latr/internal/config"
+	"github.com/wbh1/latr/internal/observability"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Engine defines the interface for the rotation engine
@@ -77,10 +80,22 @@ func (s *Scheduler) runDaemon(ctx context.Context) error {
 
 // executeCycle processes all configured tokens
 func (s *Scheduler) executeCycle(ctx context.Context) error {
-	log.Printf("Starting rotation cycle for %d token(s)", len(s.config.Tokens))
+	// Start tracing span
+	tracer := observability.GetTracer()
+	ctx, span := tracer.Start(ctx, "ExecuteRotationCycle")
+	defer span.End()
 
-	if len(s.config.Tokens) == 0 {
+	tokenCount := int64(len(s.config.Tokens))
+	span.SetAttributes(attribute.Int64("tokens.count", tokenCount))
+
+	log.Printf("Starting rotation cycle for %d token(s)", tokenCount)
+
+	// Record total configured tokens
+	observability.RecordTokenCount(ctx, tokenCount)
+
+	if tokenCount == 0 {
 		log.Printf("No tokens configured")
+		span.SetStatus(codes.Ok, "no tokens configured")
 		return nil
 	}
 
@@ -111,5 +126,6 @@ func (s *Scheduler) executeCycle(ctx context.Context) error {
 	}
 
 	log.Printf("Rotation cycle completed")
+	span.SetStatus(codes.Ok, "rotation cycle completed")
 	return nil
 }
