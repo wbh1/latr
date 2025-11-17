@@ -201,7 +201,7 @@ func vaultExecOutput(args ...string) ([]byte, error) {
 	dockerArgs = append(dockerArgs, args...)
 
 	cmd := exec.Command("docker", dockerArgs...)
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("vault command failed: %w\n%s", err, output)
 	}
