@@ -1,72 +1,87 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/spf13/viper"
 )
 
 // Config represents the complete configuration for the token rotator
 type Config struct {
-	Daemon        DaemonConfig        `yaml:"daemon"`
-	Rotation      RotationConfig      `yaml:"rotation"`
-	Vault         VaultConfig         `yaml:"vault"`
-	Observability ObservabilityConfig `yaml:"observability"`
-	Tokens        []TokenConfig       `yaml:"tokens"`
+	Daemon        DaemonConfig        `yaml:"daemon" mapstructure:"daemon"`
+	Rotation      RotationConfig      `yaml:"rotation" mapstructure:"rotation"`
+	Vault         VaultConfig         `yaml:"vault" mapstructure:"vault"`
+	Observability ObservabilityConfig `yaml:"observability" mapstructure:"observability"`
+	Tokens        []TokenConfig       `yaml:"tokens" mapstructure:"tokens"`
 }
 
 // DaemonConfig contains settings for daemon behavior
 type DaemonConfig struct {
-	Mode          string `yaml:"mode"`
-	CheckInterval string `yaml:"check_interval"`
-	DryRun        bool   `yaml:"dry_run"`
+	Mode          string `yaml:"mode" mapstructure:"mode"`
+	CheckInterval string `yaml:"check_interval" mapstructure:"check_interval"`
+	DryRun        bool   `yaml:"dry_run" mapstructure:"dry_run"`
 }
 
 // RotationConfig contains settings for token rotation
 type RotationConfig struct {
-	ThresholdPercent int  `yaml:"threshold_percent"`
-	PruneExpired     bool `yaml:"prune_expired"`
+	ThresholdPercent int  `yaml:"threshold_percent" mapstructure:"threshold_percent"`
+	PruneExpired     bool `yaml:"prune_expired" mapstructure:"prune_expired"`
 }
 
 // VaultConfig contains Vault connection and authentication settings
 type VaultConfig struct {
-	Address   string `yaml:"address"`
-	RoleID    string `yaml:"role_id"`
-	SecretID  string `yaml:"secret_id"`
-	MountPath string `yaml:"mount_path"`
+	Address   string `yaml:"address" mapstructure:"address"`
+	RoleID    string `yaml:"role_id" mapstructure:"role_id"`
+	SecretID  string `yaml:"secret_id" mapstructure:"secret_id"`
+	MountPath string `yaml:"mount_path" mapstructure:"mount_path"`
 }
 
 // ObservabilityConfig contains settings for telemetry and logging
 type ObservabilityConfig struct {
-	OTelEndpoint string `yaml:"otel_endpoint"`
-	LogLevel     string `yaml:"log_level"`
+	OTelEndpoint string `yaml:"otel_endpoint" mapstructure:"otel_endpoint"`
+	LogLevel     string `yaml:"log_level" mapstructure:"log_level"`
 }
 
 // TokenConfig represents a single token to manage
 type TokenConfig struct {
-	Label             string          `yaml:"label"`
-	Team              string          `yaml:"team"`
-	Validity          string          `yaml:"validity"`
-	Scopes            string          `yaml:"scopes"`
-	RotationThreshold int             `yaml:"rotation_threshold"`
-	Storage           []StorageConfig `yaml:"storage"`
+	Label             string          `yaml:"label" mapstructure:"label"`
+	Team              string          `yaml:"team" mapstructure:"team"`
+	Validity          string          `yaml:"validity" mapstructure:"validity"`
+	Scopes            string          `yaml:"scopes" mapstructure:"scopes"`
+	RotationThreshold int             `yaml:"rotation_threshold" mapstructure:"rotation_threshold"`
+	Storage           []StorageConfig `yaml:"storage" mapstructure:"storage"`
 }
 
 // StorageConfig represents where to store the rotated token
 type StorageConfig struct {
-	Type string `yaml:"type"`
-	Path string `yaml:"path"`
+	Type string `yaml:"type" mapstructure:"type"`
+	Path string `yaml:"path" mapstructure:"path"`
 }
 
 // Parse parses YAML configuration data into a Config struct
+// Environment variables in the format ${VAR_NAME} or $VAR_NAME are automatically expanded
 func Parse(data []byte) (*Config, error) {
+	// Expand environment variables in the YAML content
+	expandedData := []byte(os.ExpandEnv(string(data)))
+
+	v := viper.New()
+	v.SetConfigType("yaml")
+
+	// Read config from byte slice
+	if err := v.ReadConfig(bytes.NewReader(expandedData)); err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
 	return &cfg, nil
 }
 
