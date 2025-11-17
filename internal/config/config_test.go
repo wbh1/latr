@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -334,4 +335,75 @@ tokens:
 
 	assert.Equal(t, 10, cfg.Rotation.ThresholdPercent)
 	assert.Equal(t, 15, cfg.Tokens[0].RotationThreshold)
+}
+
+func TestParseConfigWithEnvVarSubstitution(t *testing.T) {
+	// Set environment variables for testing
+	os.Setenv("TEST_VAULT_ADDRESS", "https://vault-from-env.example.com")
+	os.Setenv("TEST_VAULT_ROLE_ID", "role-id-from-env")
+	os.Setenv("TEST_VAULT_SECRET_ID", "secret-id-from-env")
+	os.Setenv("TEST_OTEL_ENDPOINT", "otel-from-env:4317")
+	defer func() {
+		os.Unsetenv("TEST_VAULT_ADDRESS")
+		os.Unsetenv("TEST_VAULT_ROLE_ID")
+		os.Unsetenv("TEST_VAULT_SECRET_ID")
+		os.Unsetenv("TEST_OTEL_ENDPOINT")
+	}()
+
+	yamlContent := `
+vault:
+  address: "${TEST_VAULT_ADDRESS}"
+  role_id: "${TEST_VAULT_ROLE_ID}"
+  secret_id: "${TEST_VAULT_SECRET_ID}"
+  mount_path: "secret"
+
+observability:
+  otel_endpoint: "${TEST_OTEL_ENDPOINT}"
+  log_level: "info"
+
+tokens:
+  - label: "test-token"
+    team: "platform-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "secret/data/linode/tokens/test"
+`
+
+	cfg, err := Parse([]byte(yamlContent))
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// Verify environment variables were substituted
+	assert.Equal(t, "https://vault-from-env.example.com", cfg.Vault.Address)
+	assert.Equal(t, "role-id-from-env", cfg.Vault.RoleID)
+	assert.Equal(t, "secret-id-from-env", cfg.Vault.SecretID)
+	assert.Equal(t, "otel-from-env:4317", cfg.Observability.OTelEndpoint)
+}
+
+func TestParseConfigWithMissingEnvVar(t *testing.T) {
+	yamlContent := `
+vault:
+  address: "${MISSING_VAULT_ADDRESS}"
+  role_id: "test-role-id"
+  secret_id: "test-secret-id"
+
+tokens:
+  - label: "test-token"
+    team: "platform-team"
+    validity: "90d"
+    scopes: "*"
+    storage:
+      - type: "vault"
+        path: "secret/data/linode/tokens/test"
+`
+
+	cfg, err := Parse([]byte(yamlContent))
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	// When env var is missing, viper leaves the literal string as-is
+	// This is expected behavior - validation will catch empty required fields
+	assert.Equal(t, "", cfg.Vault.Address)
 }
