@@ -86,6 +86,7 @@ services:
 #### Multi-Architecture Support
 
 Images are available for:
+
 - `linux/amd64` (x86_64)
 - `linux/arm64` (ARM 64-bit, including Apple Silicon and Raspberry Pi 4+)
 
@@ -264,6 +265,7 @@ go build -o latr ./cmd/latr && docker build -t latr:dev . && \
 Releases are automated via GoReleaser and GitHub Actions:
 
 1. **Tag a new version** (must follow semantic versioning):
+
    ```bash
    git tag -a v1.0.0 -m "Release v1.0.0"
    git push origin v1.0.0
@@ -277,6 +279,7 @@ Releases are automated via GoReleaser and GitHub Actions:
    - Uploads release artifacts to GitHub Releases
 
 3. **Testing releases locally** (without pushing):
+
    ```bash
    # Install GoReleaser
    go install github.com/goreleaser/goreleaser/v2@latest
@@ -371,6 +374,8 @@ Structured logging with rotation events, errors, and state changes
 
 ## Roadmap
 
+- [ ] Add proper tracing with OTel
+- [ ] Use structured logging
 - [ ] Additional storage backends
 - [ ] Prometheus metrics exporter
 - [x] Integration tests with Docker Compose

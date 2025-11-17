@@ -1,0 +1,41 @@
+# Local development configuration for latr
+#
+# Setup instructions:
+# 1. Copy this file to config.local.yml in the project root
+# 2. Replace YOUR_LINODE_API_TOKEN_HERE with your actual Linode API token
+# 3. Run: docker-compose up --build
+#
+# The vault credentials below are fixed dev credentials created by vault-init service
+
+daemon:
+  mode: "daemon"                   # "daemon" or "one-shot"
+  check_interval: "30m"            # How often to check tokens (daemon mode only)
+  dry_run: false                   # If true, no actual changes are made
+
+rotation:
+  threshold_percent: 10
+  prune_expired: false
+
+vault:
+  # Use docker service name for Vault address
+  address: "http://vault:8200"
+  # Fixed dev credentials (created by vault-init service)
+  role_id: "dev-role-id-12345678"
+  secret_id: "dev-secret-id-87654321"
+  mount_path: "secret"
+
+# Observability settings
+observability:
+  otel_endpoint: "otelcol:4317"  # OpenTelemetry collector endpoint (optional)
+  log_level: "debug"                # debug, info, warn, error
+
+tokens:
+  # Example token configuration - customize as needed
+  - label: "dev-test-token"
+    team: "local-dev"
+    validity: "7d"
+    scopes: "linodes:read_only"
+    storage:
+      - type: "vault"
+        path: "latr-dev/test-token"
+

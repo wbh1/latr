@@ -1,0 +1,13 @@
+# ABOUTME: Development Dockerfile for latr - builds from source for local testing
+# ABOUTME: Used by docker-compose.yml for local dev (NOT for releases - see Dockerfile)
+
+FROM golang:1.24
+
+WORKDIR /build
+
+COPY . .
+
+RUN go build -o /usr/local/bin/latr ./cmd/latr
+
+ENTRYPOINT ["/usr/local/bin/latr"]
+
