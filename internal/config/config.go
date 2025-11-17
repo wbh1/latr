@@ -67,7 +67,7 @@ type StorageConfig struct {
 // Environment variables in the format ${VAR_NAME} or $VAR_NAME are automatically expanded
 func Parse(data []byte) (*Config, error) {
 	// Expand environment variables in the YAML content
-	expandedData := []byte(os.ExpandEnv(string(data)))
+	expandedData := []byte(os.Expand(string(data), os.Getenv))
 
 	v := viper.New()
 	v.SetConfigType("yaml")
