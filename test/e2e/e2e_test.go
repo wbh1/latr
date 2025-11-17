@@ -157,13 +157,8 @@ path "secret/metadata/e2e/*" {
   capabilities = ["create", "read", "update", "list", "delete"]
 }
 `
-	policyFile := "/tmp/latr-e2e-policy.hcl"
-	if err := os.WriteFile(policyFile, []byte(policy), 0644); err != nil {
-		return fmt.Errorf("failed to write policy file: %w", err)
-	}
-	defer os.Remove(policyFile)
-
-	if err := vaultExec("policy", "write", "latr-e2e", policyFile); err != nil {
+	// Write policy using stdin instead of a file
+	if err := vaultExecWithStdin(policy, "policy", "write", "latr-e2e", "-"); err != nil {
 		return fmt.Errorf("failed to write policy: %w", err)
 	}
 
@@ -198,16 +193,36 @@ func vaultExec(args ...string) error {
 }
 
 func vaultExecOutput(args ...string) ([]byte, error) {
-	cmd := exec.Command("vault", args...)
-	cmd.Env = append(os.Environ(),
-		"VAULT_ADDR="+vaultAddr,
-		"VAULT_TOKEN="+vaultToken,
-	)
+	// Run vault commands inside the Docker container
+	dockerArgs := []string{"compose", "-f", composeFile, "exec", "-T",
+		"-e", "VAULT_ADDR=http://127.0.0.1:8200",
+		"-e", "VAULT_TOKEN=" + vaultToken,
+		"vault", "vault"}
+	dockerArgs = append(dockerArgs, args...)
+
+	cmd := exec.Command("docker", dockerArgs...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("vault command failed: %w\n%s", err, output)
 	}
 	return output, nil
+}
+
+func vaultExecWithStdin(stdin string, args ...string) error {
+	// Run vault commands inside the Docker container with stdin
+	dockerArgs := []string{"compose", "-f", composeFile, "exec", "-T",
+		"-e", "VAULT_ADDR=http://127.0.0.1:8200",
+		"-e", "VAULT_TOKEN=" + vaultToken,
+		"vault", "vault"}
+	dockerArgs = append(dockerArgs, args...)
+
+	cmd := exec.Command("docker", dockerArgs...)
+	cmd.Stdin = bytes.NewBufferString(stdin)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("vault command failed: %w\n%s", err, output)
+	}
+	return nil
 }
 
 // Helper function to run latr with config
@@ -432,7 +447,7 @@ func TestE2E_RotateToken(t *testing.T) {
 
 	// Setup: Create existing token that's 95% expired (5% validity remaining)
 	now := time.Now()
-	validity := 90 * 24 * time.Hour // 90 days
+	validity := 90 * 24 * time.Hour          // 90 days
 	created := now.Add(-validity * 95 / 100) // Created 95% of validity ago
 	expiry := created.Add(validity)          // Expires 5% from now
 
