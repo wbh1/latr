@@ -63,10 +63,23 @@ type StorageConfig struct {
 	Path string `yaml:"path" mapstructure:"path"`
 }
 
-// Parse parses YAML configuration data into a Config struct
-// Environment variables in the format ${VAR_NAME} or $VAR_NAME are automatically expanded
+// Parse parses YAML configuration data into a Config struct.
+//
+// Environment variables are automatically expanded before parsing the YAML.
+// Supported formats:
+//   - ${VAR_NAME} - expands to the value of VAR_NAME
+//   - $VAR_NAME   - expands to the value of VAR_NAME
+//
+// If an environment variable is not set, it expands to an empty string.
+// This is useful for keeping secrets out of config files:
+//
+//	vault:
+//	  address: "https://vault.example.com"
+//	  role_id: "${VAULT_ROLE_ID}"      # Expanded from environment
+//	  secret_id: "${VAULT_SECRET_ID}"  # Expanded from environment
 func Parse(data []byte) (*Config, error) {
-	// Expand environment variables in the YAML content
+	// Expand environment variables in the YAML content before parsing
+	// This uses os.Expand which replaces ${VAR} and $VAR with their values
 	expandedData := []byte(os.Expand(string(data), os.Getenv))
 
 	v := viper.New()
