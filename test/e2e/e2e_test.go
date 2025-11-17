@@ -201,7 +201,7 @@ func vaultExecOutput(args ...string) ([]byte, error) {
 	dockerArgs = append(dockerArgs, args...)
 
 	cmd := exec.Command("docker", dockerArgs...)
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("vault command failed: %w\n%s", err, output)
 	}
@@ -383,8 +383,8 @@ func TestE2E_CreateToken(t *testing.T) {
 	// Setup: Reset mock state
 	resetMockLinode(t)
 
-	// Create config file with actual role_id and secret_id
-	configContent := fmt.Sprintf(`daemon:
+	// Create config file using environment variable references
+	configContent := `daemon:
   mode: "one-shot"
   dry_run: false
 
@@ -394,8 +394,8 @@ rotation:
 
 vault:
   address: "http://localhost:8200"
-  role_id: "%s"
-  secret_id: "%s"
+  role_id: "${VAULT_ROLE_ID}"
+  secret_id: "${VAULT_SECRET_ID}"
   mount_path: "secret"
 
 observability:
@@ -409,7 +409,7 @@ tokens:
     storage:
       - type: "vault"
         path: "e2e/test-create"
-`, roleID, secretID)
+`
 
 	configPath := filepath.Join(os.TempDir(), "latr-e2e-create-config.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
@@ -454,8 +454,8 @@ func TestE2E_RotateToken(t *testing.T) {
 	oldTokenID := setupMockLinodeToken(t, "e2e-test-rotate", expiry)
 	t.Logf("Setup old token with ID: %d, expiry: %s", oldTokenID, expiry.Format(time.RFC3339))
 
-	// Create config file with actual role_id and secret_id
-	configContent := fmt.Sprintf(`daemon:
+	// Create config file using environment variable references
+	configContent := `daemon:
   mode: "one-shot"
   dry_run: false
 
@@ -465,8 +465,8 @@ rotation:
 
 vault:
   address: "http://localhost:8200"
-  role_id: "%s"
-  secret_id: "%s"
+  role_id: "${VAULT_ROLE_ID}"
+  secret_id: "${VAULT_SECRET_ID}"
   mount_path: "secret"
 
 observability:
@@ -480,7 +480,7 @@ tokens:
     storage:
       - type: "vault"
         path: "e2e/test-rotate"
-`, roleID, secretID)
+`
 
 	configPath := filepath.Join(os.TempDir(), "latr-e2e-rotate-config.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
@@ -523,8 +523,8 @@ func TestE2E_DryRunMode(t *testing.T) {
 	// Setup: Reset mock state
 	resetMockLinode(t)
 
-	// Create config file with dry_run enabled
-	configContent := fmt.Sprintf(`daemon:
+	// Create config file with dry_run enabled using environment variable references
+	configContent := `daemon:
   mode: "one-shot"
   dry_run: true
 
@@ -534,8 +534,8 @@ rotation:
 
 vault:
   address: "http://localhost:8200"
-  role_id: "%s"
-  secret_id: "%s"
+  role_id: "${VAULT_ROLE_ID}"
+  secret_id: "${VAULT_SECRET_ID}"
   mount_path: "secret"
 
 observability:
@@ -549,7 +549,7 @@ tokens:
     storage:
       - type: "vault"
         path: "e2e/test-dryrun"
-`, roleID, secretID)
+`
 
 	configPath := filepath.Join(os.TempDir(), "latr-e2e-dryrun-config.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
@@ -586,8 +586,8 @@ func TestE2E_DaemonMode(t *testing.T) {
 
 	setupMockLinodeToken(t, "e2e-test-daemon", expiry)
 
-	// Create config file
-	configContent := fmt.Sprintf(`daemon:
+	// Create config file using environment variable references
+	configContent := `daemon:
   mode: "daemon"
   check_interval: "5s"
   dry_run: false
@@ -598,8 +598,8 @@ rotation:
 
 vault:
   address: "http://localhost:8200"
-  role_id: "%s"
-  secret_id: "%s"
+  role_id: "${VAULT_ROLE_ID}"
+  secret_id: "${VAULT_SECRET_ID}"
   mount_path: "secret"
 
 observability:
@@ -613,7 +613,7 @@ tokens:
     storage:
       - type: "vault"
         path: "e2e/test-daemon"
-`, roleID, secretID)
+`
 
 	configPath := filepath.Join(os.TempDir(), "latr-e2e-daemon-config.yaml")
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
