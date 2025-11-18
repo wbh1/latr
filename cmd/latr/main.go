@@ -11,6 +11,7 @@ import (
 
 	"github.com/wbh1/latr/internal/config"
 	"github.com/wbh1/latr/internal/linode"
+	"github.com/wbh1/latr/internal/observability"
 	"github.com/wbh1/latr/internal/rotation"
 	"github.com/wbh1/latr/internal/scheduler"
 	"github.com/wbh1/latr/internal/vault"
@@ -57,6 +58,22 @@ func main() {
 	log.Printf("Prune expired: %v", cfg.Rotation.PruneExpired)
 	log.Printf("Dry run: %v", cfg.Daemon.DryRun)
 
+	// Set up context with signal handling for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Initialize OpenTelemetry
+	telemetryConfig := &observability.Config{
+		ServiceName:  "latr",
+		OTelEndpoint: cfg.Observability.OTelEndpoint,
+		Enabled:      cfg.Observability.OTelEndpoint != "",
+	}
+
+	telemetryCleanup, err := observability.Setup(ctx, telemetryConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize telemetry: %v", err)
+	}
+	defer telemetryCleanup()
+
 	// Create Linode client
 	linodeClient := linode.NewClient(linodeToken)
 	log.Printf("Linode client initialized")
@@ -80,9 +97,6 @@ func main() {
 
 	// Create scheduler
 	sched := scheduler.NewScheduler(cfg, engine)
-
-	// Set up context with signal handling for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)

@@ -7,7 +7,10 @@ import (
 	"time"
 
 	"github.com/wbh1/latr/internal/config"
+	"github.com/wbh1/latr/internal/observability"
 	"github.com/wbh1/latr/pkg/models"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // LinodeClient defines the interface for Linode API operations
@@ -44,17 +47,31 @@ func NewEngine(linodeClient LinodeClient, vaultClient VaultClient, dryRun bool) 
 
 // ProcessToken processes a single token configuration
 func (e *Engine) ProcessToken(ctx context.Context, tokenConfig config.TokenConfig, thresholdPercent int) error {
+	// Start tracing span
+	tracer := observability.GetTracer()
+	ctx, span := tracer.Start(ctx, "ProcessToken")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("token.label", tokenConfig.Label),
+		attribute.String("token.team", tokenConfig.Team),
+	)
+
 	log.Printf("Processing token: %s", tokenConfig.Label)
 
 	// Parse validity duration
 	validity, err := config.ParseValidityDuration(tokenConfig.Validity)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "invalid validity")
 		return fmt.Errorf("invalid validity for token %s: %w", tokenConfig.Label, err)
 	}
 
 	// Check if token exists in Linode
 	existingToken, err := e.linodeClient.FindTokenByLabel(ctx, tokenConfig.Label)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to find token")
 		return fmt.Errorf("failed to find token %s: %w", tokenConfig.Label, err)
 	}
 
@@ -65,21 +82,37 @@ func (e *Engine) ProcessToken(ctx context.Context, tokenConfig config.TokenConfi
 
 	// Token exists, check if it needs rotation
 	existingToken.Validity = validity
+
+	// Record token validity remaining metric
+	validityRemaining := time.Until(existingToken.ExpiresAt).Seconds()
+	observability.RecordTokenValidityRemaining(ctx, tokenConfig.Label, validityRemaining)
+	span.SetAttributes(attribute.Float64("token.validity_remaining_seconds", validityRemaining))
+
 	if existingToken.NeedsRotation(thresholdPercent) {
 		log.Printf("Token %s needs rotation (%0.2f%% validity remaining)", tokenConfig.Label, existingToken.PercentValidityRemaining())
 		return e.rotateToken(ctx, tokenConfig, existingToken, validity)
 	}
 
 	log.Printf("Token %s does not need rotation (%0.2f%% validity remaining)", tokenConfig.Label, existingToken.PercentValidityRemaining())
+	span.SetStatus(codes.Ok, "no rotation needed")
 	return nil
 }
 
 // createNewToken creates a new token that doesn't exist yet
 func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenConfig, validity time.Duration) error {
+	// Start tracing span
+	tracer := observability.GetTracer()
+	ctx, span := tracer.Start(ctx, "CreateNewToken")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("token.label", tokenConfig.Label))
+
 	log.Printf("Creating new token: %s", tokenConfig.Label)
+	startTime := time.Now()
 
 	if e.dryRun {
 		log.Printf("[DRY RUN] Would create new token: %s", tokenConfig.Label)
+		span.SetStatus(codes.Ok, "dry run")
 		return nil
 	}
 
@@ -87,6 +120,9 @@ func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenCon
 	storagePath := tokenConfig.Storage[0].Path
 	existingState, err := e.vaultClient.ReadTokenState(ctx, storagePath)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to read token state")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
 		return fmt.Errorf("failed to read token state: %w", err)
 	}
 
@@ -96,6 +132,10 @@ func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenCon
 	// Create token in Linode
 	newToken, err := e.linodeClient.CreateToken(ctx, tokenConfig.Label, tokenConfig.Scopes, expiry)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create token")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
+		observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
 		return fmt.Errorf("failed to create token %s in Linode: %w", tokenConfig.Label, err)
 	}
 
@@ -105,23 +145,49 @@ func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenCon
 	if err := e.storeTokenInBackends(ctx, tokenConfig.Storage, newToken.Token); err != nil {
 		// Track state even if storage fails, so we can retry on next run
 		_ = e.updateState(ctx, storagePath, newToken, existingState, expiry)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to store token")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
+		observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
+		observability.RecordVaultStorageError(ctx, storagePath)
 		return fmt.Errorf("failed to store token in vault: %w", err)
 	}
 
 	// Update state
 	if err := e.updateState(ctx, storagePath, newToken, existingState, expiry); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to update state")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
+		observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
 		return fmt.Errorf("failed to update token state: %w", err)
 	}
+
+	// Record successful rotation
+	span.SetStatus(codes.Ok, "token created successfully")
+	observability.RecordRotation(ctx, tokenConfig.Label, true)
+	observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
 
 	return nil
 }
 
 // rotateToken rotates an existing token
 func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig, existingToken *models.Token, validity time.Duration) error {
+	// Start tracing span
+	tracer := observability.GetTracer()
+	ctx, span := tracer.Start(ctx, "RotateToken")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("token.label", tokenConfig.Label),
+		attribute.Int("token.existing_id", existingToken.ID),
+	)
+
 	log.Printf("Rotating token: %s", tokenConfig.Label)
+	startTime := time.Now()
 
 	if e.dryRun {
 		log.Printf("[DRY RUN] Would rotate token: %s", tokenConfig.Label)
+		span.SetStatus(codes.Ok, "dry run")
 		return nil
 	}
 
@@ -129,6 +195,9 @@ func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig
 	storagePath := tokenConfig.Storage[0].Path
 	existingState, err := e.vaultClient.ReadTokenState(ctx, storagePath)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to read token state")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
 		return fmt.Errorf("failed to read token state: %w", err)
 	}
 
@@ -138,8 +207,14 @@ func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig
 	// Create new token in Linode
 	newToken, err := e.linodeClient.CreateToken(ctx, tokenConfig.Label, tokenConfig.Scopes, newExpiry)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to create token")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
+		observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
 		return fmt.Errorf("failed to create token %s in Linode: %w", tokenConfig.Label, err)
 	}
+
+	span.SetAttributes(attribute.Int("token.new_id", newToken.ID))
 
 	log.Printf("Created new token %s with ID %d, expires at %s", tokenConfig.Label, newToken.ID, newToken.ExpiresAt.Format(time.RFC3339))
 	log.Printf("Previous token ID %d will expire at %s", existingToken.ID, existingToken.ExpiresAt.Format(time.RFC3339))
@@ -148,13 +223,27 @@ func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig
 	if err := e.storeTokenInBackends(ctx, tokenConfig.Storage, newToken.Token); err != nil {
 		// Track state even if storage fails
 		_ = e.updateStateAfterRotation(ctx, storagePath, newToken, existingToken, existingState)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to store token")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
+		observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
+		observability.RecordVaultStorageError(ctx, storagePath)
 		return fmt.Errorf("failed to store token in vault: %w", err)
 	}
 
 	// Update state with previous token info
 	if err := e.updateStateAfterRotation(ctx, storagePath, newToken, existingToken, existingState); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to update state")
+		observability.RecordRotation(ctx, tokenConfig.Label, false)
+		observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
 		return fmt.Errorf("failed to update token state: %w", err)
 	}
+
+	// Record successful rotation
+	span.SetStatus(codes.Ok, "token rotated successfully")
+	observability.RecordRotation(ctx, tokenConfig.Label, true)
+	observability.RecordRotationDuration(ctx, tokenConfig.Label, time.Since(startTime))
 
 	return nil
 }
