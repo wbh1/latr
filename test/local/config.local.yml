@@ -9,12 +9,12 @@
 
 daemon:
   mode: "daemon"                   # "daemon" or "one-shot"
-  check_interval: "30m"            # How often to check tokens (daemon mode only)
+  check_interval: "1m"            # How often to check tokens (daemon mode only)
   dry_run: false                   # If true, no actual changes are made
 
 rotation:
-  threshold_percent: 10
-  prune_expired: false
+  threshold_percent: 40
+  prune_expired: true
 
 vault:
   # Use docker service name for Vault address
@@ -31,11 +31,18 @@ observability:
 
 tokens:
   # Example token configuration - customize as needed
-  - label: "dev-test-token"
+  - label: "latr-dev-test-token-1"
     team: "local-dev"
-    validity: "7d"
+    validity: "5m"
     scopes: "linodes:read_only"
     storage:
       - type: "vault"
-        path: "latr-dev/test-token"
+        path: "latr-dev/latr-dev-test-token-1"
+  - label: "latr-dev-test-token-2"
+    team: "local-dev"
+    validity: "5m"
+    scopes: "linodes:read_only"
+    storage:
+      - type: "vault"
+        path: "latr-dev/latr-dev-test-token-2"
 

@@ -1,0 +1,17 @@
+[tasks.local-docker]
+description = "Run local Docker compose environment"
+run = "docker compose -f ./test/local/docker-compose.yml up -d"
+
+[tasks.test]
+description = "Run unit tests"
+run = "go test ./..."
+
+[tasks.test-e2e]
+description = "Run e2e tests (requires Docker Compose)"
+run = """
+	echo "Checking docker compose..."
+	command -v docker >/dev/null 2>&1 || { echo "docker is required but not installed"; exit 1; }
+	docker compose version >/dev/null 2>&1 || { echo "docker compose is required but not installed"; exit 1; }
+	echo "Running e2e tests..."
+	go test -tags=e2e ./test/e2e -v -timeout=5m
+"""
