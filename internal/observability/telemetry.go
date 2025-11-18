@@ -27,11 +27,11 @@ type Config struct {
 
 // Metrics holds all the metric instruments
 type Metrics struct {
-	TokensTotal                metric.Int64UpDownCounter
-	RotationsTotal             metric.Int64Counter
-	RotationDuration           metric.Float64Histogram
-	TokenValidityRemaining     metric.Float64Gauge
-	VaultStorageErrorsTotal    metric.Int64Counter
+	TokensTotal             metric.Int64Gauge
+	RotationsTotal          metric.Int64Counter
+	RotationDuration        metric.Float64Histogram
+	TokenValidityRemaining  metric.Float64Gauge
+	VaultStorageErrorsTotal metric.Int64Counter
 }
 
 var (
@@ -118,7 +118,7 @@ func Setup(ctx context.Context, cfg *Config) (func(), error) {
 
 // createMetrics creates all metric instruments
 func createMetrics(meter metric.Meter) (*Metrics, error) {
-	tokensTotal, err := meter.Int64UpDownCounter(
+	tokensTotal, err := meter.Int64Gauge(
 		"latr_tokens_total",
 		metric.WithDescription("Total number of configured tokens"),
 	)
@@ -188,7 +188,7 @@ func RecordTokenCount(ctx context.Context, count int64) {
 	if globalMetrics == nil {
 		return
 	}
-	globalMetrics.TokensTotal.Add(ctx, count)
+	globalMetrics.TokensTotal.Record(ctx, count)
 }
 
 // RecordRotation records a rotation attempt with success/failure status
