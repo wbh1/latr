@@ -41,7 +41,7 @@ func (m *MockLinodeClient) RevokeToken(ctx context.Context, tokenID int) error {
 }
 
 func (m *MockLinodeClient) ListTokens(ctx context.Context, filter *linodego.Filter) ([]*models.Token, error) {
-	args := m.Called(ctx)
+	args := m.Called(ctx, filter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -373,7 +373,7 @@ func TestEngine_PruneExpiredTokens(t *testing.T) {
 		},
 	}
 
-	mockLinode.On("ListTokens", mock.Anything).Return(allTokens, nil)
+	mockLinode.On("ListTokens", mock.Anything, mock.AnythingOfType("*linodego.Filter")).Return(allTokens, nil)
 	mockLinode.On("RevokeToken", mock.Anything, 100).Return(nil)
 
 	engine := &Engine{
@@ -407,7 +407,7 @@ func TestEngine_PruneExpiredTokens_DryRun(t *testing.T) {
 		},
 	}
 
-	mockLinode.On("ListTokens", mock.Anything).Return(allTokens, nil)
+	mockLinode.On("ListTokens", mock.Anything, mock.AnythingOfType("*linodego.Filter")).Return(allTokens, nil)
 
 	engine := &Engine{
 		linodeClient: mockLinode,
