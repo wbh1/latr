@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/wbh1/latr/internal/config"
@@ -42,13 +42,17 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 // runOnce executes a single rotation cycle
 func (s *Scheduler) runOnce(ctx context.Context) error {
-	log.Printf("Running in one-shot mode")
+	logger := observability.GetLogger()
+	attrs := observability.TraceAttrs(ctx)
+	logger.InfoContext(ctx, "Running in one-shot mode", attrs...)
 	return s.executeCycle(ctx)
 }
 
 // runDaemon runs the rotation cycle at regular intervals
 func (s *Scheduler) runDaemon(ctx context.Context) error {
-	log.Printf("Running in daemon mode with interval: %s", s.config.Daemon.CheckInterval)
+	logger := observability.GetLogger()
+	attrs := append([]any{slog.String("check_interval", s.config.Daemon.CheckInterval)}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Running in daemon mode", attrs...)
 
 	interval, err := time.ParseDuration(s.config.Daemon.CheckInterval)
 	if err != nil {
@@ -60,18 +64,21 @@ func (s *Scheduler) runDaemon(ctx context.Context) error {
 
 	// Run immediately on start
 	if err := s.executeCycle(ctx); err != nil {
-		log.Printf("Error in rotation cycle: %v", err)
+		attrs := append([]any{slog.Any("error", err)}, observability.TraceAttrs(ctx)...)
+		logger.ErrorContext(ctx, "Error in rotation cycle", attrs...)
 	}
 
 	// Then run at intervals
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Shutting down scheduler: %v", ctx.Err())
+			attrs := append([]any{slog.Any("reason", ctx.Err())}, observability.TraceAttrs(ctx)...)
+			logger.InfoContext(ctx, "Shutting down scheduler", attrs...)
 			return ctx.Err()
 		case <-ticker.C:
 			if err := s.executeCycle(ctx); err != nil {
-				log.Printf("Error in rotation cycle: %v", err)
+				attrs := append([]any{slog.Any("error", err)}, observability.TraceAttrs(ctx)...)
+				logger.ErrorContext(ctx, "Error in rotation cycle", attrs...)
 				// Continue running even if there's an error
 			}
 		}
@@ -80,6 +87,8 @@ func (s *Scheduler) runDaemon(ctx context.Context) error {
 
 // executeCycle processes all configured tokens
 func (s *Scheduler) executeCycle(ctx context.Context) error {
+	logger := observability.GetLogger()
+
 	// Start tracing span
 	tracer := observability.GetTracer()
 	ctx, span := tracer.Start(ctx, "ExecuteRotationCycle")
@@ -88,13 +97,14 @@ func (s *Scheduler) executeCycle(ctx context.Context) error {
 	tokenCount := int64(len(s.config.Tokens))
 	span.SetAttributes(attribute.Int64("tokens.count", tokenCount))
 
-	log.Printf("Starting rotation cycle for %d token(s)", tokenCount)
+	attrs := append([]any{slog.Int64("token_count", tokenCount)}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Starting rotation cycle", attrs...)
 
 	// Record total configured tokens
 	observability.RecordTokenCount(ctx, tokenCount)
 
 	if tokenCount == 0 {
-		log.Printf("No tokens configured")
+		logger.InfoContext(ctx, "No tokens configured", observability.TraceAttrs(ctx)...)
 		span.SetStatus(codes.Ok, "no tokens configured")
 		return nil
 	}
@@ -108,7 +118,11 @@ func (s *Scheduler) executeCycle(ctx context.Context) error {
 		}
 
 		if err := s.engine.ProcessToken(ctx, tokenConfig, threshold); err != nil {
-			log.Printf("Failed to process token %s: %v", tokenConfig.Label, err)
+			attrs := append([]any{
+				slog.String("token_label", tokenConfig.Label),
+				slog.Any("error", err),
+			}, observability.TraceAttrs(ctx)...)
+			logger.ErrorContext(ctx, "Failed to process token", attrs...)
 			// Continue processing other tokens
 		}
 	}
@@ -121,11 +135,12 @@ func (s *Scheduler) executeCycle(ctx context.Context) error {
 		}
 
 		if err := s.engine.PruneExpiredTokens(ctx, managedLabels); err != nil {
-			log.Printf("Failed to prune expired tokens: %v", err)
+			attrs := append([]any{slog.Any("error", err)}, observability.TraceAttrs(ctx)...)
+			logger.ErrorContext(ctx, "Failed to prune expired tokens", attrs...)
 		}
 	}
 
-	log.Printf("Rotation cycle completed")
+	logger.InfoContext(ctx, "Rotation cycle completed", observability.TraceAttrs(ctx)...)
 	span.SetStatus(codes.Ok, "rotation cycle completed")
 	return nil
 }

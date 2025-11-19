@@ -6,6 +6,10 @@ run = "docker compose -f ./test/local/docker-compose.yml up --build --force-recr
 description = "Run local Docker compose environment (force rebuild of `latr` image)"
 run = "docker compose -f ./test/local/docker-compose.yml up --build --force-recreate -d"
 
+[tasks.local-docker-down]
+description = "Tear down local Docker compose environment"
+run = "docker compose -f ./test/local/docker-compose.yml down"
+
 [tasks.test]
 description = "Run unit tests"
 run = "go test ./..."

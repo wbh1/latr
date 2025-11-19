@@ -30,6 +30,14 @@
   - E2E tests: `mise run test-e2e`
   - All tests: `mise run test-all`
 
+### Structured Logging
+
+- **slog package**: All logging uses Go's standard library `log/slog` with JSON output
+- **Trace context**: OpenTelemetry trace/span IDs automatically attached via `observability.TraceAttrs(ctx)`
+- **Rich context**: Log entries include structured fields (token labels, IDs, errors, timestamps)
+- **Logger access**: Use `observability.GetLogger()` to get the global logger instance
+- **Pattern**: Always include trace context: `logger.InfoContext(ctx, "message", append([]any{...fields}, observability.TraceAttrs(ctx)...)...)`
+
 ### Configuration
 
 - Single YAML file or glob pattern support (`-config "configs/*.yaml"`)

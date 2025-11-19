@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -34,29 +34,39 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Initialize structured logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	// This will be overriden when we setup telemetry after loading the config
+	observability.SetLogger(logger)
+
 	if *configPath == "" {
-		log.Fatal("Error: -config flag is required")
+		logger.Error("Missing required flag", slog.String("flag", "config"))
+		os.Exit(1)
 	}
 
 	// Load Linode API token from environment
 	linodeToken := os.Getenv("LINODE_TOKEN")
 	if linodeToken == "" {
-		log.Fatal("Error: LINODE_TOKEN environment variable is required")
+		logger.Error("Missing required environment variable", slog.String("variable", "LINODE_TOKEN"))
+		os.Exit(1)
 	}
 
 	// Load and validate configuration
-	log.Printf("Loading configuration from: %s", *configPath)
+	logger.Info("Loading configuration", slog.String("path", *configPath))
 	cfg, err := config.LoadAndValidate(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		logger.Error("Failed to load configuration", slog.Any("error", err))
+		os.Exit(1)
 	}
 
-	log.Printf("Configuration loaded successfully")
-	log.Printf("Mode: %s", cfg.Daemon.Mode)
-	log.Printf("Configured tokens: %d", len(cfg.Tokens))
-	log.Printf("Rotation threshold: %d%%", cfg.Rotation.ThresholdPercent)
-	log.Printf("Prune expired: %v", cfg.Rotation.PruneExpired)
-	log.Printf("Dry run: %v", cfg.Daemon.DryRun)
+	logger.Info("Configuration loaded successfully",
+		slog.String("mode", cfg.Daemon.Mode),
+		slog.Int("token_count", len(cfg.Tokens)),
+		slog.Int("rotation_threshold_percent", cfg.Rotation.ThresholdPercent),
+		slog.Bool("prune_expired", cfg.Rotation.PruneExpired),
+		slog.Bool("dry_run", cfg.Daemon.DryRun))
 
 	// Set up context with signal handling for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -66,17 +76,20 @@ func main() {
 		ServiceName:  "latr",
 		OTelEndpoint: cfg.Observability.OTelEndpoint,
 		Enabled:      cfg.Observability.OTelEndpoint != "",
+		LogLevel:     cfg.Observability.LogLevel,
 	}
 
 	telemetryCleanup, err := observability.Setup(ctx, telemetryConfig)
 	if err != nil {
-		log.Fatalf("Failed to initialize telemetry: %v", err)
+		logger.ErrorContext(ctx, "Failed to initialize telemetry", slog.Any("error", err))
+		os.Exit(1)
 	}
+	logger = observability.GetLogger()
 	defer telemetryCleanup()
 
 	// Create Linode client
 	linodeClient := linode.NewClient(linodeToken)
-	log.Printf("Linode client initialized")
+	logger.InfoContext(ctx, "Linode client initialized")
 
 	// Create Vault client
 	vaultConfig := &vault.Config{
@@ -88,9 +101,13 @@ func main() {
 
 	vaultClient, err := vault.NewClient(vaultConfig)
 	if err != nil {
-		log.Fatalf("Failed to create Vault client: %v", err)
+		logger.ErrorContext(ctx, "Failed to create Vault client",
+			slog.Any("error", err),
+			slog.String("vault_address", cfg.Vault.Address))
+		os.Exit(1)
 	}
-	log.Printf("Vault client initialized and authenticated")
+	logger.InfoContext(ctx, "Vault client initialized and authenticated",
+		slog.String("vault_address", cfg.Vault.Address))
 
 	// Create rotation engine
 	engine := rotation.NewEngine(linodeClient, vaultClient, cfg.Daemon.DryRun)
@@ -104,20 +121,24 @@ func main() {
 
 	go func() {
 		sig := <-sigChan
-		log.Printf("Received signal: %v", sig)
-		log.Printf("Initiating graceful shutdown...")
+		logger.Info("Received shutdown signal", slog.String("signal", sig.String()))
+		logger.Info("Initiating graceful shutdown")
 		cancel()
 	}()
 
 	// Run scheduler
-	log.Printf("Starting latr...")
+	logger.InfoContext(ctx, "Starting latr",
+		slog.String("version", version),
+		slog.String("commit", commit),
+		slog.String("build_date", date))
 	if err := sched.Run(ctx); err != nil {
 		if err == context.Canceled {
-			log.Printf("Shutdown complete")
+			logger.Info("Shutdown complete")
 			os.Exit(0)
 		}
-		log.Fatalf("Scheduler error: %v", err)
+		logger.Error("Scheduler error", slog.Any("error", err))
+		os.Exit(1)
 	}
 
-	log.Printf("latr finished successfully")
+	logger.Info("latr finished successfully")
 }
