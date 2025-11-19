@@ -374,11 +374,11 @@ Structured logging with rotation events, errors, and state changes
 
 ## Roadmap
 
-- [ ] Add proper tracing with OTel
-- [ ] Use structured logging
-- [ ] Additional storage backends
-- [ ] Prometheus metrics exporter
-- [x] Integration tests with Docker Compose
+- [x] Add proper tracing with OTel (<https://github.com/wbh1/latr/pull/11>)
+- [ ] Use structured logging (<https://github.com/wbh1/latr/issues/16>)
+- [ ] Additional storage backends (<https://github.com/wbh1/latr/issues/17>)
+- [x] Prometheus metrics exporter (<https://github.com/wbh1/latr/pull/11>)
+- [x] Integration tests with Docker Compose (<https://github.com/wbh1/latr/pull/2>)
 
 ## Contributing
 
