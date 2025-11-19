@@ -1,6 +1,10 @@
 [tasks.local-docker]
 description = "Run local Docker compose environment"
-run = "docker compose -f ./test/local/docker-compose.yml up -d"
+run = "docker compose -f ./test/local/docker-compose.yml up --build --force-recreate -d"
+
+[tasks.local-docker-build]
+description = "Run local Docker compose environment (force rebuild of `latr` image)"
+run = "docker compose -f ./test/local/docker-compose.yml up --build --force-recreate -d"
 
 [tasks.test]
 description = "Run unit tests"
@@ -15,3 +19,7 @@ run = """
 	echo "Running e2e tests..."
 	go test -tags=e2e ./test/e2e -v -timeout=5m
 """
+
+[tasks.test-all]
+description = "Run all tests (unit + e2e)"
+depends = ['test', 'test-e2e']

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/linode/linodego"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -26,12 +27,12 @@ func (m *MockLinodeClient) CreateToken(ctx context.Context, label, scopes string
 	return args.Get(0).(*models.Token), args.Error(1)
 }
 
-func (m *MockLinodeClient) FindTokenByLabel(ctx context.Context, label string) (*models.Token, error) {
+func (m *MockLinodeClient) FindTokenByLabel(ctx context.Context, label string) ([]*models.Token, error) {
 	args := m.Called(ctx, label)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*models.Token), args.Error(1)
+	return []*models.Token{args.Get(0).(*models.Token)}, args.Error(1)
 }
 
 func (m *MockLinodeClient) RevokeToken(ctx context.Context, tokenID int) error {
@@ -39,8 +40,8 @@ func (m *MockLinodeClient) RevokeToken(ctx context.Context, tokenID int) error {
 	return args.Error(0)
 }
 
-func (m *MockLinodeClient) ListTokens(ctx context.Context) ([]*models.Token, error) {
-	args := m.Called(ctx)
+func (m *MockLinodeClient) ListTokens(ctx context.Context, filter *linodego.Filter) ([]*models.Token, error) {
+	args := m.Called(ctx, filter)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -372,7 +373,7 @@ func TestEngine_PruneExpiredTokens(t *testing.T) {
 		},
 	}
 
-	mockLinode.On("ListTokens", mock.Anything).Return(allTokens, nil)
+	mockLinode.On("ListTokens", mock.Anything, mock.AnythingOfType("*linodego.Filter")).Return(allTokens, nil)
 	mockLinode.On("RevokeToken", mock.Anything, 100).Return(nil)
 
 	engine := &Engine{
@@ -387,8 +388,8 @@ func TestEngine_PruneExpiredTokens(t *testing.T) {
 
 	// Should only revoke token1 (expired and managed)
 	mockLinode.AssertExpectations(t)
-	mockLinode.AssertNotCalled(t, "RevokeToken", mock.Anything, 200)  // Not expired
-	mockLinode.AssertNotCalled(t, "RevokeToken", mock.Anything, 300)  // Not managed
+	mockLinode.AssertNotCalled(t, "RevokeToken", mock.Anything, 200) // Not expired
+	mockLinode.AssertNotCalled(t, "RevokeToken", mock.Anything, 300) // Not managed
 }
 
 func TestEngine_PruneExpiredTokens_DryRun(t *testing.T) {
@@ -406,7 +407,7 @@ func TestEngine_PruneExpiredTokens_DryRun(t *testing.T) {
 		},
 	}
 
-	mockLinode.On("ListTokens", mock.Anything).Return(allTokens, nil)
+	mockLinode.On("ListTokens", mock.Anything, mock.AnythingOfType("*linodego.Filter")).Return(allTokens, nil)
 
 	engine := &Engine{
 		linodeClient: mockLinode,

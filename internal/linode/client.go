@@ -90,8 +90,16 @@ func (c *Client) GetToken(ctx context.Context, tokenID int) (*models.Token, erro
 }
 
 // ListTokens lists all API tokens
-func (c *Client) ListTokens(ctx context.Context) ([]*models.Token, error) {
-	tokens, err := c.client.ListTokens(ctx, nil)
+func (c *Client) ListTokens(ctx context.Context, filter *linodego.Filter) ([]*models.Token, error) {
+	var opts *linodego.ListOptions
+	if filter != nil {
+		filterStr, err := filter.MarshalJSON()
+		if err != nil {
+			return nil, fmt.Errorf("unable to apply Linode API filter to tokens: %w", err)
+		}
+		opts = linodego.NewListOptions(0, string(filterStr))
+	}
+	tokens, err := c.client.ListTokens(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
 	}
@@ -123,19 +131,11 @@ func (c *Client) ListTokens(ctx context.Context) ([]*models.Token, error) {
 }
 
 // FindTokenByLabel finds a token by its label
-func (c *Client) FindTokenByLabel(ctx context.Context, label string) (*models.Token, error) {
-	tokens, err := c.ListTokens(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, token := range tokens {
-		if token.Label == label {
-			return token, nil
-		}
-	}
-
-	return nil, nil // Not found
+// Note: more than one token may have the same label
+func (c *Client) FindTokenByLabel(ctx context.Context, label string) ([]*models.Token, error) {
+	f := linodego.Filter{}
+	f.AddField(linodego.Eq, "label", label)
+	return c.ListTokens(ctx, &f)
 }
 
 // RevokeToken deletes a token by ID

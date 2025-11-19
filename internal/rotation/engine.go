@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/linode/linodego"
 	"github.com/wbh1/latr/internal/config"
 	"github.com/wbh1/latr/internal/observability"
 	"github.com/wbh1/latr/pkg/models"
@@ -16,9 +17,9 @@ import (
 // LinodeClient defines the interface for Linode API operations
 type LinodeClient interface {
 	CreateToken(ctx context.Context, label, scopes string, expiry time.Time) (*models.Token, error)
-	FindTokenByLabel(ctx context.Context, label string) (*models.Token, error)
+	FindTokenByLabel(ctx context.Context, label string) ([]*models.Token, error)
 	RevokeToken(ctx context.Context, tokenID int) error
-	ListTokens(ctx context.Context) ([]*models.Token, error)
+	ListTokens(ctx context.Context, filter *linodego.Filter) ([]*models.Token, error)
 }
 
 // VaultClient defines the interface for Vault operations
@@ -68,18 +69,28 @@ func (e *Engine) ProcessToken(ctx context.Context, tokenConfig config.TokenConfi
 	}
 
 	// Check if token exists in Linode
-	existingToken, err := e.linodeClient.FindTokenByLabel(ctx, tokenConfig.Label)
+	existingTokens, err := e.linodeClient.FindTokenByLabel(ctx, tokenConfig.Label)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to find token")
 		return fmt.Errorf("failed to find token %s: %w", tokenConfig.Label, err)
 	}
 
-	if existingToken == nil {
+	if existingTokens == nil {
 		// Token doesn't exist, create it
 		return e.createNewToken(ctx, tokenConfig, validity)
 	}
 
+	var existingToken *models.Token
+	for _, t := range existingTokens {
+		// If more than one token exists with the same label, we only want to find the newest one.
+		// When more than one token exists with the same label, we assume that the old one(s) already rotated
+		// and just hasn't aged out yet.
+		if existingToken == nil || t.CreatedAt.After(existingToken.CreatedAt) {
+			existingToken = t
+		}
+
+	}
 	// Token exists, check if it needs rotation
 	existingToken.Validity = validity
 
@@ -269,13 +280,13 @@ func (e *Engine) updateState(ctx context.Context, path string, newToken *models.
 	}
 
 	state := &models.TokenState{
-		Label:              newToken.Label,
-		CurrentLinodeID:    newToken.ID,
-		CurrentTokenValue:  newToken.Token,
-		LastRotatedAt:      time.Now(),
-		PreviousLinodeID:   0,
-		PreviousExpiresAt:  time.Time{},
-		RotationCount:      rotationCount,
+		Label:             newToken.Label,
+		CurrentLinodeID:   newToken.ID,
+		CurrentTokenValue: newToken.Token,
+		LastRotatedAt:     time.Now(),
+		PreviousLinodeID:  0,
+		PreviousExpiresAt: time.Time{},
+		RotationCount:     rotationCount,
 	}
 
 	return e.vaultClient.WriteTokenState(ctx, path, state)
@@ -289,13 +300,13 @@ func (e *Engine) updateStateAfterRotation(ctx context.Context, path string, newT
 	}
 
 	state := &models.TokenState{
-		Label:              newToken.Label,
-		CurrentLinodeID:    newToken.ID,
-		CurrentTokenValue:  newToken.Token,
-		LastRotatedAt:      time.Now(),
-		PreviousLinodeID:   oldToken.ID,
-		PreviousExpiresAt:  oldToken.ExpiresAt,
-		RotationCount:      rotationCount + 1,
+		Label:             newToken.Label,
+		CurrentLinodeID:   newToken.ID,
+		CurrentTokenValue: newToken.Token,
+		LastRotatedAt:     time.Now(),
+		PreviousLinodeID:  oldToken.ID,
+		PreviousExpiresAt: oldToken.ExpiresAt,
+		RotationCount:     rotationCount + 1,
 	}
 
 	return e.vaultClient.WriteTokenState(ctx, path, state)
@@ -306,7 +317,7 @@ func (e *Engine) PruneExpiredTokens(ctx context.Context, managedLabels []string)
 	log.Printf("Pruning expired tokens...")
 
 	// Get all tokens
-	allTokens, err := e.linodeClient.ListTokens(ctx)
+	allTokens, err := e.linodeClient.ListTokens(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to list tokens: %w", err)
 	}
