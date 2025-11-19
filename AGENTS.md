@@ -66,7 +66,8 @@
 2. Evaluation: Calculate validity percentage remaining
 3. Creation: Generate new token if rotation needed
 4. Storage: Write new token + state to Vault
-5. Optional cleanup: Revoke expired tokens if `prune_expired: true`
+
+Note: Expired tokens are automatically pruned by the Linode API - no manual cleanup required
 
 ### Daemon vs One-Shot
 

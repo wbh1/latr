@@ -65,7 +65,6 @@ func main() {
 		slog.String("mode", cfg.Daemon.Mode),
 		slog.Int("token_count", len(cfg.Tokens)),
 		slog.Int("rotation_threshold_percent", cfg.Rotation.ThresholdPercent),
-		slog.Bool("prune_expired", cfg.Rotation.PruneExpired),
 		slog.Bool("dry_run", cfg.Daemon.DryRun))
 
 	// Set up context with signal handling for graceful shutdown

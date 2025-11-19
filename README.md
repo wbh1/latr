@@ -130,7 +130,6 @@ daemon:
 # Rotation behavior
 rotation:
   threshold_percent: 10 # Rotate when <=10% of validity remains
-  prune_expired: false # Delete expired tokens from Linode API
 
 # Vault configuration
 vault:
@@ -226,12 +225,11 @@ Use a glob pattern to load multiple config files:
    - Current token ID and value
    - Previous token ID and expiry
    - Rotation count and timestamp
-6. **Cleanup** (optional): Prunes expired tokens if `prune_expired: true`
 
 ### Important Behaviors
 
-- **Old tokens are kept**: Previous tokens are NOT deleted until their expiration date
-- **Only manages configured tokens**: Only rotates/deletes tokens in the configuration
+- **Automatic cleanup**: Expired tokens are automatically pruned by the Linode API - no manual cleanup needed
+- **Only manages configured tokens**: Only rotates tokens specified in the configuration
 - **Vault retry on failure**: If Linode succeeds but Vault fails, state is tracked for retry on next run
 - **Graceful shutdown**: Handles SIGTERM/SIGINT for clean daemon shutdown
 
@@ -370,7 +368,6 @@ Structured logging with rotation events, errors, and state changes
 - Enable TLS for Vault communication in production
 - Rotate Vault AppRole secret IDs regularly
 - Review token scopes - use least privilege principle
-- Consider enabling `prune_expired` to reduce token sprawl
 
 ## Roadmap
 

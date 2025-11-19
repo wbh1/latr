@@ -4,7 +4,6 @@ daemon:
 
 rotation:
   threshold_percent: 10
-  prune_expired: false
 
 vault:
   address: "http://localhost:8200"

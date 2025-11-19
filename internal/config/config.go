@@ -28,8 +28,7 @@ type DaemonConfig struct {
 
 // RotationConfig contains settings for token rotation
 type RotationConfig struct {
-	ThresholdPercent int  `yaml:"threshold_percent"`
-	PruneExpired     bool `yaml:"prune_expired"`
+	ThresholdPercent int `yaml:"threshold_percent"`
 }
 
 // VaultConfig contains Vault connection and authentication settings

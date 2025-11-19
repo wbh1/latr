@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/linode/linodego"
 	"github.com/wbh1/latr/internal/config"
 	"github.com/wbh1/latr/internal/observability"
 	"github.com/wbh1/latr/pkg/models"
@@ -18,8 +17,6 @@ import (
 type LinodeClient interface {
 	CreateToken(ctx context.Context, label, scopes string, expiry time.Time) (*models.Token, error)
 	FindTokenByLabel(ctx context.Context, label string) ([]*models.Token, error)
-	RevokeToken(ctx context.Context, tokenID int) error
-	ListTokens(ctx context.Context, filter *linodego.Filter) ([]*models.Token, error)
 }
 
 // VaultClient defines the interface for Vault operations
@@ -356,70 +353,4 @@ func (e *Engine) updateStateAfterRotation(ctx context.Context, path string, newT
 	}
 
 	return e.vaultClient.WriteTokenState(ctx, path, state)
-}
-
-// PruneExpiredTokens deletes expired tokens that are managed by this tool
-func (e *Engine) PruneExpiredTokens(ctx context.Context, managedLabels []string) error {
-	logger := observability.GetLogger()
-
-	attrs := append([]any{
-		slog.Int("managed_label_count", len(managedLabels)),
-		slog.Bool("dry_run", e.dryRun),
-	}, observability.TraceAttrs(ctx)...)
-	logger.InfoContext(ctx, "Pruning expired tokens", attrs...)
-
-	// Get all tokens
-	allTokens, err := e.linodeClient.ListTokens(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to list tokens: %w", err)
-	}
-
-	if e.dryRun {
-		logger.InfoContext(ctx, "DRY RUN: Would prune expired tokens", observability.TraceAttrs(ctx)...)
-		return nil
-	}
-
-	// Create a map of managed labels for fast lookup
-	managedMap := make(map[string]bool)
-	for _, label := range managedLabels {
-		managedMap[label] = true
-	}
-
-	// Find and delete expired managed tokens
-	for _, token := range allTokens {
-		if !managedMap[token.Label] {
-			continue // Skip unmanaged tokens
-		}
-
-		if token.IsExpired() {
-			attrs := append([]any{
-				slog.String("token_label", token.Label),
-				slog.Int("token_id", token.ID),
-			}, observability.TraceAttrs(ctx)...)
-			logger.InfoContext(ctx, "Pruning expired token", attrs...)
-
-			if e.dryRun {
-				logger.InfoContext(ctx, "DRY RUN: Would revoke token",
-					append([]any{slog.Int("token_id", token.ID)}, observability.TraceAttrs(ctx)...)...)
-			} else {
-				if err := e.linodeClient.RevokeToken(ctx, token.ID); err != nil {
-					attrs := append([]any{
-						slog.String("token_label", token.Label),
-						slog.Int("token_id", token.ID),
-						slog.Any("error", err),
-					}, observability.TraceAttrs(ctx)...)
-					logger.ErrorContext(ctx, "Failed to revoke token", attrs...)
-					// Continue with other tokens
-				} else {
-					attrs := append([]any{
-						slog.String("token_label", token.Label),
-						slog.Int("token_id", token.ID),
-					}, observability.TraceAttrs(ctx)...)
-					logger.InfoContext(ctx, "Revoked expired token", attrs...)
-				}
-			}
-		}
-	}
-
-	return nil
 }

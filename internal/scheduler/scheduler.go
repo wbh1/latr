@@ -15,7 +15,6 @@ import (
 // Engine defines the interface for the rotation engine
 type Engine interface {
 	ProcessToken(ctx context.Context, tokenConfig config.TokenConfig, thresholdPercent int) error
-	PruneExpiredTokens(ctx context.Context, managedLabels []string) error
 }
 
 // Scheduler manages the execution schedule for token rotation
@@ -124,19 +123,6 @@ func (s *Scheduler) executeCycle(ctx context.Context) error {
 			}, observability.TraceAttrs(ctx)...)
 			logger.ErrorContext(ctx, "Failed to process token", attrs...)
 			// Continue processing other tokens
-		}
-	}
-
-	// Prune expired tokens if configured
-	if s.config.Rotation.PruneExpired {
-		managedLabels := make([]string, len(s.config.Tokens))
-		for i, token := range s.config.Tokens {
-			managedLabels[i] = token.Label
-		}
-
-		if err := s.engine.PruneExpiredTokens(ctx, managedLabels); err != nil {
-			attrs := append([]any{slog.Any("error", err)}, observability.TraceAttrs(ctx)...)
-			logger.ErrorContext(ctx, "Failed to prune expired tokens", attrs...)
 		}
 	}
 

@@ -2,43 +2,42 @@
 
 # Global daemon settings
 daemon:
-  mode: "daemon"                   # "daemon" or "one-shot"
-  check_interval: "30m"            # How often to check tokens (daemon mode only)
-  dry_run: false                   # If true, no actual changes are made
+  mode: "daemon" # "daemon" or "one-shot"
+  check_interval: "30m" # How often to check tokens (daemon mode only)
+  dry_run: false # If true, no actual changes are made
 
 # Rotation behavior
 rotation:
-  threshold_percent: 10            # Rotate when <=10% of validity remains
-  prune_expired: false             # Delete expired tokens from Linode API
+  threshold_percent: 10 # Rotate when <=10% of validity remains
 
 # Vault configuration
 # Environment variables are automatically expanded using ${VAR_NAME} or $VAR_NAME syntax
 vault:
   address: "https://vault.example.com"
-  role_id: "${VAULT_ROLE_ID}"      # Expanded from VAULT_ROLE_ID environment variable
-  secret_id: "${VAULT_SECRET_ID}"  # Expanded from VAULT_SECRET_ID environment variable
-  mount_path: "secret"             # KV v2 mount path
+  role_id: "${VAULT_ROLE_ID}" # Expanded from VAULT_ROLE_ID environment variable
+  secret_id: "${VAULT_SECRET_ID}" # Expanded from VAULT_SECRET_ID environment variable
+  mount_path: "secret" # KV v2 mount path
 
 # Observability settings
 observability:
-  otel_endpoint: "localhost:4317"  # OpenTelemetry collector endpoint (optional)
-  log_level: "info"                # debug, info, warn, error
+  otel_endpoint: "localhost:4317" # OpenTelemetry collector endpoint (optional)
+  log_level: "info" # debug, info, warn, error
 
 # Token definitions
 tokens:
   - label: "my-api-token"
     team: "platform-team"
-    validity: "90d"                # Must be <= 6 months (180d)
-    scopes: "*"                    # "*" for all scopes, or comma-separated list
+    validity: "90d" # Must be <= 6 months (180d)
+    scopes: "*" # "*" for all scopes, or comma-separated list
     storage:
       - type: "vault"
         path: "secret/data/linode/tokens/my-api-token"
 
   - label: "backup-token"
     team: "sre-team"
-    validity: "180d"               # Maximum allowed
+    validity: "180d" # Maximum allowed
     scopes: "linodes:read_only,domains:read_only"
-    rotation_threshold: 15         # Override global threshold for this token
+    rotation_threshold: 15 # Override global threshold for this token
     storage:
       - type: "vault"
         path: "secret/data/linode/tokens/backup"

@@ -71,9 +71,6 @@ func MergeConfigs(base, override *Config) *Config {
 	if override.Rotation.ThresholdPercent != 0 {
 		merged.Rotation.ThresholdPercent = override.Rotation.ThresholdPercent
 	}
-	if override.Rotation.PruneExpired {
-		merged.Rotation.PruneExpired = override.Rotation.PruneExpired
-	}
 
 	// Merge Vault config
 	merged.Vault = base.Vault
