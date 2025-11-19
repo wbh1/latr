@@ -3,7 +3,9 @@ package observability
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -18,11 +20,17 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+var (
+	logger   *slog.Logger
+	logLevel *slog.LevelVar = &slog.LevelVar{}
+)
+
 // Config holds observability configuration
 type Config struct {
 	ServiceName  string
 	OTelEndpoint string
 	Enabled      bool
+	LogLevel     string
 }
 
 // Metrics holds all the metric instruments
@@ -41,12 +49,24 @@ var (
 
 // Setup initializes OpenTelemetry with both tracing and metrics
 func Setup(ctx context.Context, cfg *Config) (func(), error) {
+	// Initialize our long-term logger (since a default may already exist from prior to calling this)
+	handlerOpts := &slog.HandlerOptions{
+		Level:     logLevel,
+		AddSource: true,
+	}
+
+	// TODO: Support different log formats
+	SetLogger(slog.New(slog.NewJSONHandler(os.Stdout, handlerOpts)))
+	logLevel.Set(ParseLogLevel(cfg.LogLevel))
+
 	if !cfg.Enabled || cfg.OTelEndpoint == "" {
-		log.Printf("OpenTelemetry disabled or no endpoint configured")
+		logger.InfoContext(ctx, "OpenTelemetry disabled or no endpoint configured")
 		return func() {}, nil
 	}
 
-	log.Printf("Initializing OpenTelemetry with endpoint: %s", cfg.OTelEndpoint)
+	logger.InfoContext(ctx, "Initializing OpenTelemetry",
+		slog.String("endpoint", cfg.OTelEndpoint),
+		slog.String("service", cfg.ServiceName))
 
 	// Create resource
 	res, err := resource.New(ctx,
@@ -96,20 +116,20 @@ func Setup(ctx context.Context, cfg *Config) (func(), error) {
 		return nil, fmt.Errorf("failed to create metrics: %w", err)
 	}
 
-	log.Printf("OpenTelemetry initialized successfully")
+	logger.InfoContext(ctx, "OpenTelemetry initialized successfully")
 
 	// Return cleanup function
 	cleanup := func() {
-		log.Printf("Shutting down OpenTelemetry...")
+		logger.Info("Shutting down OpenTelemetry")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := traceProvider.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Error shutting down trace provider: %v", err)
+			logger.ErrorContext(shutdownCtx, "Error shutting down trace provider", slog.Any("error", err))
 		}
 
 		if err := meterProvider.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Error shutting down meter provider: %v", err)
+			logger.ErrorContext(shutdownCtx, "Error shutting down meter provider", slog.Any("error", err))
 		}
 	}
 
@@ -236,4 +256,48 @@ func RecordVaultStorageError(ctx context.Context, path string) {
 	globalMetrics.VaultStorageErrorsTotal.Add(ctx, 1,
 		metric.WithAttributes(attribute.String("path", path)),
 	)
+}
+
+// TraceAttrs extracts OpenTelemetry trace context attributes for structured logging
+// Returns attributes as []any for use with slog methods
+func TraceAttrs(ctx context.Context) []any {
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if !spanCtx.IsValid() {
+		return nil
+	}
+
+	return []any{
+		slog.String("trace_id", spanCtx.TraceID().String()),
+		slog.String("span_id", spanCtx.SpanID().String()),
+	}
+}
+
+// SetLogger sets the global logger instance
+func SetLogger(l *slog.Logger) {
+	logger = l
+	slog.SetDefault(l)
+}
+
+func ParseLogLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		slog.Warn("Invalid log level provided. Defaulting to INFO", "level", level)
+		return slog.LevelInfo
+	}
+}
+
+// GetLogger returns the global logger instance
+func GetLogger() *slog.Logger {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return logger
 }

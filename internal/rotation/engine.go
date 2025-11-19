@@ -3,7 +3,7 @@ package rotation
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/linode/linodego"
@@ -48,6 +48,8 @@ func NewEngine(linodeClient LinodeClient, vaultClient VaultClient, dryRun bool) 
 
 // ProcessToken processes a single token configuration
 func (e *Engine) ProcessToken(ctx context.Context, tokenConfig config.TokenConfig, thresholdPercent int) error {
+	logger := observability.GetLogger()
+
 	// Start tracing span
 	tracer := observability.GetTracer()
 	ctx, span := tracer.Start(ctx, "ProcessToken")
@@ -58,7 +60,11 @@ func (e *Engine) ProcessToken(ctx context.Context, tokenConfig config.TokenConfi
 		attribute.String("token.team", tokenConfig.Team),
 	)
 
-	log.Printf("Processing token: %s", tokenConfig.Label)
+	attrs := append([]any{
+		slog.String("token_label", tokenConfig.Label),
+		slog.String("team", tokenConfig.Team),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Processing token", attrs...)
 
 	// Parse validity duration
 	validity, err := config.ParseValidityDuration(tokenConfig.Validity)
@@ -100,17 +106,27 @@ func (e *Engine) ProcessToken(ctx context.Context, tokenConfig config.TokenConfi
 	span.SetAttributes(attribute.Float64("token.validity_remaining_seconds", validityRemaining))
 
 	if existingToken.NeedsRotation(thresholdPercent) {
-		log.Printf("Token %s needs rotation (%0.2f%% validity remaining)", tokenConfig.Label, existingToken.PercentValidityRemaining())
+		attrs := append([]any{
+			slog.String("token_label", tokenConfig.Label),
+			slog.Float64("validity_remaining_percent", existingToken.PercentValidityRemaining()),
+		}, observability.TraceAttrs(ctx)...)
+		logger.InfoContext(ctx, "Token needs rotation", attrs...)
 		return e.rotateToken(ctx, tokenConfig, existingToken, validity)
 	}
 
-	log.Printf("Token %s does not need rotation (%0.2f%% validity remaining)", tokenConfig.Label, existingToken.PercentValidityRemaining())
+	attrs = append([]any{
+		slog.String("token_label", tokenConfig.Label),
+		slog.Float64("validity_remaining_percent", existingToken.PercentValidityRemaining()),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Token does not need rotation", attrs...)
 	span.SetStatus(codes.Ok, "no rotation needed")
 	return nil
 }
 
 // createNewToken creates a new token that doesn't exist yet
 func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenConfig, validity time.Duration) error {
+	logger := observability.GetLogger()
+
 	// Start tracing span
 	tracer := observability.GetTracer()
 	ctx, span := tracer.Start(ctx, "CreateNewToken")
@@ -118,11 +134,16 @@ func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenCon
 
 	span.SetAttributes(attribute.String("token.label", tokenConfig.Label))
 
-	log.Printf("Creating new token: %s", tokenConfig.Label)
+	attrs := append([]any{
+		slog.String("token_label", tokenConfig.Label),
+		slog.Bool("dry_run", e.dryRun),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Creating new token", attrs...)
 	startTime := time.Now()
 
 	if e.dryRun {
-		log.Printf("[DRY RUN] Would create new token: %s", tokenConfig.Label)
+		logger.InfoContext(ctx, "DRY RUN: Would create new token",
+			append([]any{slog.String("token_label", tokenConfig.Label)}, observability.TraceAttrs(ctx)...)...)
 		span.SetStatus(codes.Ok, "dry run")
 		return nil
 	}
@@ -150,7 +171,12 @@ func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenCon
 		return fmt.Errorf("failed to create token %s in Linode: %w", tokenConfig.Label, err)
 	}
 
-	log.Printf("Created token %s with ID %d, expires at %s", tokenConfig.Label, newToken.ID, newToken.ExpiresAt.Format(time.RFC3339))
+	attrs = append([]any{
+		slog.String("token_label", tokenConfig.Label),
+		slog.Int("token_id", newToken.ID),
+		slog.Time("expires_at", newToken.ExpiresAt),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Created token", attrs...)
 
 	// Store token in all configured storage backends
 	if err := e.storeTokenInBackends(ctx, tokenConfig.Storage, newToken.Token); err != nil {
@@ -183,6 +209,8 @@ func (e *Engine) createNewToken(ctx context.Context, tokenConfig config.TokenCon
 
 // rotateToken rotates an existing token
 func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig, existingToken *models.Token, validity time.Duration) error {
+	logger := observability.GetLogger()
+
 	// Start tracing span
 	tracer := observability.GetTracer()
 	ctx, span := tracer.Start(ctx, "RotateToken")
@@ -193,11 +221,17 @@ func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig
 		attribute.Int("token.existing_id", existingToken.ID),
 	)
 
-	log.Printf("Rotating token: %s", tokenConfig.Label)
+	attrs := append([]any{
+		slog.String("token_label", tokenConfig.Label),
+		slog.Int("existing_token_id", existingToken.ID),
+		slog.Bool("dry_run", e.dryRun),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Rotating token", attrs...)
 	startTime := time.Now()
 
 	if e.dryRun {
-		log.Printf("[DRY RUN] Would rotate token: %s", tokenConfig.Label)
+		logger.InfoContext(ctx, "DRY RUN: Would rotate token",
+			append([]any{slog.String("token_label", tokenConfig.Label)}, observability.TraceAttrs(ctx)...)...)
 		span.SetStatus(codes.Ok, "dry run")
 		return nil
 	}
@@ -227,8 +261,14 @@ func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig
 
 	span.SetAttributes(attribute.Int("token.new_id", newToken.ID))
 
-	log.Printf("Created new token %s with ID %d, expires at %s", tokenConfig.Label, newToken.ID, newToken.ExpiresAt.Format(time.RFC3339))
-	log.Printf("Previous token ID %d will expire at %s", existingToken.ID, existingToken.ExpiresAt.Format(time.RFC3339))
+	attrs = append([]any{
+		slog.String("token_label", tokenConfig.Label),
+		slog.Int("new_token_id", newToken.ID),
+		slog.Time("new_expires_at", newToken.ExpiresAt),
+		slog.Int("previous_token_id", existingToken.ID),
+		slog.Time("previous_expires_at", existingToken.ExpiresAt),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Created new token during rotation", attrs...)
 
 	// Store new token in all configured storage backends
 	if err := e.storeTokenInBackends(ctx, tokenConfig.Storage, newToken.Token); err != nil {
@@ -261,12 +301,18 @@ func (e *Engine) rotateToken(ctx context.Context, tokenConfig config.TokenConfig
 
 // storeTokenInBackends stores the token in all configured storage backends
 func (e *Engine) storeTokenInBackends(ctx context.Context, storageConfigs []config.StorageConfig, token string) error {
+	logger := observability.GetLogger()
+
 	for _, storage := range storageConfigs {
 		if storage.Type == "vault" {
 			if err := e.vaultClient.WriteToken(ctx, storage.Path, token); err != nil {
 				return err
 			}
-			log.Printf("Stored token in Vault at path: %s", storage.Path)
+			attrs := append([]any{
+				slog.String("storage_type", "vault"),
+				slog.String("vault_path", storage.Path),
+			}, observability.TraceAttrs(ctx)...)
+			logger.InfoContext(ctx, "Stored token in Vault", attrs...)
 		}
 	}
 	return nil
@@ -314,7 +360,13 @@ func (e *Engine) updateStateAfterRotation(ctx context.Context, path string, newT
 
 // PruneExpiredTokens deletes expired tokens that are managed by this tool
 func (e *Engine) PruneExpiredTokens(ctx context.Context, managedLabels []string) error {
-	log.Printf("Pruning expired tokens...")
+	logger := observability.GetLogger()
+
+	attrs := append([]any{
+		slog.Int("managed_label_count", len(managedLabels)),
+		slog.Bool("dry_run", e.dryRun),
+	}, observability.TraceAttrs(ctx)...)
+	logger.InfoContext(ctx, "Pruning expired tokens", attrs...)
 
 	// Get all tokens
 	allTokens, err := e.linodeClient.ListTokens(ctx, nil)
@@ -323,7 +375,7 @@ func (e *Engine) PruneExpiredTokens(ctx context.Context, managedLabels []string)
 	}
 
 	if e.dryRun {
-		log.Printf("[DRY RUN] Would prune expired tokens")
+		logger.InfoContext(ctx, "DRY RUN: Would prune expired tokens", observability.TraceAttrs(ctx)...)
 		return nil
 	}
 
@@ -340,15 +392,30 @@ func (e *Engine) PruneExpiredTokens(ctx context.Context, managedLabels []string)
 		}
 
 		if token.IsExpired() {
-			log.Printf("Pruning expired token %s (ID: %d)", token.Label, token.ID)
+			attrs := append([]any{
+				slog.String("token_label", token.Label),
+				slog.Int("token_id", token.ID),
+			}, observability.TraceAttrs(ctx)...)
+			logger.InfoContext(ctx, "Pruning expired token", attrs...)
+
 			if e.dryRun {
-				log.Printf("[DRY RUN] Would revoke token ID %d", token.ID)
+				logger.InfoContext(ctx, "DRY RUN: Would revoke token",
+					append([]any{slog.Int("token_id", token.ID)}, observability.TraceAttrs(ctx)...)...)
 			} else {
 				if err := e.linodeClient.RevokeToken(ctx, token.ID); err != nil {
-					log.Printf("Failed to revoke token %s (ID: %d): %v", token.Label, token.ID, err)
+					attrs := append([]any{
+						slog.String("token_label", token.Label),
+						slog.Int("token_id", token.ID),
+						slog.Any("error", err),
+					}, observability.TraceAttrs(ctx)...)
+					logger.ErrorContext(ctx, "Failed to revoke token", attrs...)
 					// Continue with other tokens
 				} else {
-					log.Printf("Revoked expired token %s (ID: %d)", token.Label, token.ID)
+					attrs := append([]any{
+						slog.String("token_label", token.Label),
+						slog.Int("token_id", token.ID),
+					}, observability.TraceAttrs(ctx)...)
+					logger.InfoContext(ctx, "Revoked expired token", attrs...)
 				}
 			}
 		}
