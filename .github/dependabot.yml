@@ -1,0 +1,67 @@
+version: 2
+updates:
+  # Monitor Go module dependencies
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      # Group OpenTelemetry dependencies together
+      opentelemetry:
+        patterns:
+          - "go.opentelemetry.io/*"
+      # Group HashiCorp dependencies together
+      hashicorp:
+        patterns:
+          - "github.com/hashicorp/*"
+    labels:
+      - "dependencies"
+      - "go"
+
+  # Monitor GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Monitor Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Monitor Docker images in test/e2e/mock-linode
+  - package-ecosystem: "docker"
+    directory: "/test/e2e/mock-linode"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+      - "test"
+
+  # Monitor Docker images in test/local
+  - package-ecosystem: "docker"
+    directory: "/test/local"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+      - "test"
