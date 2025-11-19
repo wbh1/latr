@@ -173,7 +173,6 @@ func TestMergeConfigsOverride(t *testing.T) {
 		},
 		Rotation: RotationConfig{
 			ThresholdPercent: 15,
-			PruneExpired:     true,
 		},
 	}
 
@@ -182,7 +181,6 @@ func TestMergeConfigsOverride(t *testing.T) {
 	// Second config should override first for non-empty values
 	assert.Equal(t, "https://vault2.example.com", merged.Vault.Address)
 	assert.Equal(t, 15, merged.Rotation.ThresholdPercent)
-	assert.True(t, merged.Rotation.PruneExpired)
 }
 
 func TestLoadAndValidate(t *testing.T) {

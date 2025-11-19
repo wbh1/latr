@@ -21,11 +21,6 @@ func (m *MockEngine) ProcessToken(ctx context.Context, tokenConfig config.TokenC
 	return args.Error(0)
 }
 
-func (m *MockEngine) PruneExpiredTokens(ctx context.Context, managedLabels []string) error {
-	args := m.Called(ctx, managedLabels)
-	return args.Error(0)
-}
-
 func TestScheduler_RunOnce(t *testing.T) {
 	mockEngine := new(MockEngine)
 
@@ -35,7 +30,6 @@ func TestScheduler_RunOnce(t *testing.T) {
 		},
 		Rotation: config.RotationConfig{
 			ThresholdPercent: 10,
-			PruneExpired:     false,
 		},
 		Tokens: []config.TokenConfig{
 			{
@@ -68,34 +62,6 @@ func TestScheduler_RunOnce(t *testing.T) {
 	mockEngine.AssertExpectations(t)
 }
 
-func TestScheduler_RunOnce_WithPruning(t *testing.T) {
-	mockEngine := new(MockEngine)
-
-	cfg := &config.Config{
-		Daemon: config.DaemonConfig{
-			Mode: "one-shot",
-		},
-		Rotation: config.RotationConfig{
-			ThresholdPercent: 10,
-			PruneExpired:     true,
-		},
-		Tokens: []config.TokenConfig{
-			{Label: "token1", Team: "team1", Validity: "90d", Scopes: "*", Storage: []config.StorageConfig{{Type: "vault", Path: "path1"}}},
-		},
-	}
-
-	mockEngine.On("ProcessToken", mock.Anything, cfg.Tokens[0], 10).Return(nil)
-	mockEngine.On("PruneExpiredTokens", mock.Anything, []string{"token1"}).Return(nil)
-
-	scheduler := NewScheduler(cfg, mockEngine)
-
-	ctx := context.Background()
-	err := scheduler.Run(ctx)
-	require.NoError(t, err)
-
-	mockEngine.AssertExpectations(t)
-}
-
 func TestScheduler_RunDaemon(t *testing.T) {
 	mockEngine := new(MockEngine)
 
@@ -106,7 +72,6 @@ func TestScheduler_RunDaemon(t *testing.T) {
 		},
 		Rotation: config.RotationConfig{
 			ThresholdPercent: 10,
-			PruneExpired:     false,
 		},
 		Tokens: []config.TokenConfig{
 			{Label: "token1", Team: "team1", Validity: "90d", Scopes: "*", Storage: []config.StorageConfig{{Type: "vault", Path: "path1"}}},

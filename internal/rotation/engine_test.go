@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/linode/linodego"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -33,19 +32,6 @@ func (m *MockLinodeClient) FindTokenByLabel(ctx context.Context, label string) (
 		return nil, args.Error(1)
 	}
 	return []*models.Token{args.Get(0).(*models.Token)}, args.Error(1)
-}
-
-func (m *MockLinodeClient) RevokeToken(ctx context.Context, tokenID int) error {
-	args := m.Called(ctx, tokenID)
-	return args.Error(0)
-}
-
-func (m *MockLinodeClient) ListTokens(ctx context.Context, filter *linodego.Filter) ([]*models.Token, error) {
-	args := m.Called(ctx, filter)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]*models.Token), args.Error(1)
 }
 
 // MockVaultClient is a mock implementation of the Vault client
@@ -346,80 +332,4 @@ func TestEngine_ProcessToken_VaultWriteFails_StateTracked(t *testing.T) {
 
 	mockLinode.AssertExpectations(t)
 	mockVault.AssertExpectations(t)
-}
-
-func TestEngine_PruneExpiredTokens(t *testing.T) {
-	mockLinode := new(MockLinodeClient)
-	mockVault := new(MockVaultClient)
-
-	managedLabels := []string{"token1", "token2"}
-
-	now := time.Now()
-	allTokens := []*models.Token{
-		{
-			ID:        100,
-			Label:     "token1",
-			ExpiresAt: now.Add(-1 * time.Hour), // Expired
-		},
-		{
-			ID:        200,
-			Label:     "token2",
-			ExpiresAt: now.Add(10 * 24 * time.Hour), // Not expired
-		},
-		{
-			ID:        300,
-			Label:     "unmanaged-token",
-			ExpiresAt: now.Add(-2 * time.Hour), // Expired but not managed
-		},
-	}
-
-	mockLinode.On("ListTokens", mock.Anything, mock.AnythingOfType("*linodego.Filter")).Return(allTokens, nil)
-	mockLinode.On("RevokeToken", mock.Anything, 100).Return(nil)
-
-	engine := &Engine{
-		linodeClient: mockLinode,
-		vaultClient:  mockVault,
-		dryRun:       false,
-	}
-
-	ctx := context.Background()
-	err := engine.PruneExpiredTokens(ctx, managedLabels)
-	require.NoError(t, err)
-
-	// Should only revoke token1 (expired and managed)
-	mockLinode.AssertExpectations(t)
-	mockLinode.AssertNotCalled(t, "RevokeToken", mock.Anything, 200) // Not expired
-	mockLinode.AssertNotCalled(t, "RevokeToken", mock.Anything, 300) // Not managed
-}
-
-func TestEngine_PruneExpiredTokens_DryRun(t *testing.T) {
-	mockLinode := new(MockLinodeClient)
-	mockVault := new(MockVaultClient)
-
-	managedLabels := []string{"token1"}
-
-	now := time.Now()
-	allTokens := []*models.Token{
-		{
-			ID:        100,
-			Label:     "token1",
-			ExpiresAt: now.Add(-1 * time.Hour), // Expired
-		},
-	}
-
-	mockLinode.On("ListTokens", mock.Anything, mock.AnythingOfType("*linodego.Filter")).Return(allTokens, nil)
-
-	engine := &Engine{
-		linodeClient: mockLinode,
-		vaultClient:  mockVault,
-		dryRun:       true,
-	}
-
-	ctx := context.Background()
-	err := engine.PruneExpiredTokens(ctx, managedLabels)
-	require.NoError(t, err)
-
-	mockLinode.AssertExpectations(t)
-	// Should not actually revoke in dry-run mode
-	mockLinode.AssertNotCalled(t, "RevokeToken")
 }

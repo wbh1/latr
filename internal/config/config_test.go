@@ -51,7 +51,6 @@ tokens:
 
 	// Check rotation settings
 	assert.Equal(t, 10, cfg.Rotation.ThresholdPercent)
-	assert.False(t, cfg.Rotation.PruneExpired)
 
 	// Check vault settings
 	assert.Equal(t, "https://vault.example.com", cfg.Vault.Address)
@@ -104,7 +103,6 @@ tokens:
 	assert.Equal(t, "30m", cfg.Daemon.CheckInterval)
 	assert.False(t, cfg.Daemon.DryRun)
 	assert.Equal(t, 10, cfg.Rotation.ThresholdPercent)
-	assert.False(t, cfg.Rotation.PruneExpired)
 	assert.Equal(t, "secret", cfg.Vault.MountPath)
 	assert.Equal(t, "info", cfg.Observability.LogLevel)
 }
