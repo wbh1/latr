@@ -1,6 +1,6 @@
 module github.com/wbh1/latr
 
-go 1.24.7
+go 1.25.4
 
 require (
 	github.com/hashicorp/vault/api v1.22.0

@@ -17,7 +17,7 @@ A Go application for automatically managing and rotating Linode API tokens with 
 
 ## Requirements
 
-- Go 1.21+
+- Go 1.25.4+
 - Linode account with API token (for creating/managing tokens)
 - HashiCorp Vault with AppRole authentication
 - Valid Vault role and secret IDs
