@@ -1,0 +1,27 @@
+apiVersion: v2
+name: latr
+description: A Helm chart for deploying latr (Linode API Token Rotator)
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart and its templates, including the app version.
+version: 0.1.0
+
+# This is the version number of the application being deployed.
+appVersion: "1.0.0"
+
+keywords:
+  - linode
+  - vault
+  - token-rotation
+  - security
+  - automation
+
+maintainers:
+  - name: wbh1
+    url: https://github.com/wbh1
+
+sources:
+  - https://github.com/wbh1/latr
+
+home: https://github.com/wbh1/latr

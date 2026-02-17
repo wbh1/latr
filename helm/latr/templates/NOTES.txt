@@ -1,0 +1,63 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+  $ helm get all {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+{{- if not .Values.secrets.existingSecret }}
+{{- if or (not .Values.secrets.linodeToken) (not .Values.secrets.vaultRoleId) (not .Values.secrets.vaultSecretId) }}
+
+WARNING: You have not configured the required secrets!
+
+Please ensure you set the following values:
+  - secrets.linodeToken
+  - secrets.vaultRoleId
+  - secrets.vaultSecretId
+
+You can update the secrets using:
+
+  $ helm upgrade {{ .Release.Name }} {{ .Chart.Name }} \
+      --set secrets.linodeToken="your-linode-token" \
+      --set secrets.vaultRoleId="your-vault-role-id" \
+      --set secrets.vaultSecretId="your-vault-secret-id"
+
+Alternatively, create a values file with your secrets and upgrade:
+
+  $ helm upgrade {{ .Release.Name }} {{ .Chart.Name }} -f your-secrets.yaml
+
+{{- end }}
+{{- end }}
+
+{{- if not .Values.config.vault.address }}
+
+WARNING: Vault address is not configured!
+
+Please set config.vault.address to your Vault server URL:
+
+  $ helm upgrade {{ .Release.Name }} {{ .Chart.Name }} \
+      --set config.vault.address="https://vault.example.com:8200"
+
+{{- end }}
+
+{{- if eq (len .Values.config.tokens) 0 }}
+
+WARNING: No tokens are configured!
+
+Please configure at least one token in config.tokens.
+See the values.yaml file for an example configuration.
+
+{{- end }}
+
+To view the logs:
+
+  $ kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "latr.name" . }} -f
+
+To check the deployment status:
+
+  $ kubectl get deployment {{ include "latr.fullname" . }} -n {{ .Release.Namespace }}
+
+For more information about latr, visit:
+  https://github.com/wbh1/latr
